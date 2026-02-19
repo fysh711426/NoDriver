@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36518.9
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoDriver", "NoDriver.csproj", "{91B816FF-B08B-49AD-8B91-037465F18BC6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example", "..\Example\Example.csproj", "{8C79D901-F064-4DD8-B15E-91F207302507}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Generator", "..\Generator\Generator.csproj", "{3496A5E2-9D94-4007-9398-ECD5D2341911}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{91B816FF-B08B-49AD-8B91-037465F18BC6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{91B816FF-B08B-49AD-8B91-037465F18BC6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{91B816FF-B08B-49AD-8B91-037465F18BC6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{91B816FF-B08B-49AD-8B91-037465F18BC6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8C79D901-F064-4DD8-B15E-91F207302507}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8C79D901-F064-4DD8-B15E-91F207302507}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8C79D901-F064-4DD8-B15E-91F207302507}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8C79D901-F064-4DD8-B15E-91F207302507}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3496A5E2-9D94-4007-9398-ECD5D2341911}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3496A5E2-9D94-4007-9398-ECD5D2341911}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3496A5E2-9D94-4007-9398-ECD5D2341911}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3496A5E2-9D94-4007-9398-ECD5D2341911}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {3D40B989-B916-426F-9567-F84EBFD6A772}
+	EndGlobalSection
+EndGlobal
