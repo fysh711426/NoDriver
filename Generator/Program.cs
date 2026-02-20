@@ -36,9 +36,12 @@ namespace Generator
                     {
                         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
                     };
-                    var domain = JsonSerializer.Deserialize<Definition>(json, jsonOptions)?.Domains ?? new();
+                    var definition = JsonSerializer.Deserialize<Definition>(json, jsonOptions) ?? new();
 
-                    domains.AddRange(domain);
+                    if (definition.Version.Major != "1" || definition.Version.Minor != "3")
+                        throw new NotSupportedException($"Unsupported protocol version: {definition.Version.Major}.{definition.Version.Minor}. Expected 1.3.");
+                    
+                    domains.AddRange(definition.Domains);
                 }
             }
 

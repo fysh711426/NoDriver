@@ -10,10 +10,10 @@ namespace Generator.Models
 
         [JsonPropertyName("$ref")]
         public string? Ref { get; set; } = null;
-        public Items? Items { get; set; } = null;
-        public List<string>? Enum { get; set; } = null;
         public bool? Optional { get; set; } = null;
         public bool? Deprecated { get; set; } = null;
         public bool? Experimental { get; set; } = null;
+        public Items? Items { get; set; } = null;
+        public List<string> Enum { get; set; } = new();
     }
 }

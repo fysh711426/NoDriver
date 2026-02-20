@@ -10,7 +10,7 @@ namespace Generator.Models
         [JsonPropertyName("type")]
         public TypeKind? Kind { get; set; } = null;
         public Items? Items { get; set; } = null;
-        public List<string>? Enum { get; set; } = null;
-        public List<Property>? Properties { get; set; } = null;
+        public List<string> Enum { get; set; } = new();
+        public List<Property> Properties { get; set; } = new();
     }
 }
