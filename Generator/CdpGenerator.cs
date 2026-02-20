@@ -70,6 +70,8 @@ namespace Generator
             var indentLevel = 1;
             var indent = new string(' ', indentLevel * 4);
 
+            var domainName = ToFirstUpper(domain.Name);
+
             var sb = new StringBuilder();
             var @namespace = "NoDriver.Cdp";
 
@@ -86,22 +88,22 @@ namespace Generator
             if (domain.Deprecated == true)
                 sb.AppendLine($"{indent}[Obsolete]");
 
-            sb.AppendLine($"{indent}public static partial class {domain.Name}");
+            sb.AppendLine($"{indent}public static partial class {domainName}");
             sb.AppendLine($"{indent}{{");
 
             foreach (var type in domain.Types)
             {
-                GenerateType(sb, type, domain.Name, indentLevel + 1);
+                GenerateType(sb, type, domainName, indentLevel + 1);
             }
 
             foreach (var command in domain.Commands)
             {
-                GenerateCommand(sb, command, domain.Name, indentLevel + 1);
+                GenerateCommand(sb, command, domainName, indentLevel + 1);
             }
 
             foreach (var @event in domain.Events)
             {
-                GenerateEvent(sb, @event, domain.Name, indentLevel + 1);
+                GenerateEvent(sb, @event, domainName, indentLevel + 1);
             }
 
             sb.AppendLine($"{indent}}}");
@@ -185,11 +187,11 @@ namespace Generator
 
                     var csharpType = GetCSharpType(param.Type, param.Ref, param.Items, domainName);
 
+                    var arg = $"{csharpType} {paramName}";
                     if (param.Optional == true)
-                        methodArgs.Add($"{csharpType}? {paramName} = default");
-                    else
-                        methodArgs.Add($"{csharpType} {paramName}");
+                        arg = $"{csharpType}? {paramName} = default";
 
+                    methodArgs.Add(arg);
                     constructorArgs.Add(paramName);
                 }
 
@@ -262,9 +264,9 @@ namespace Generator
 
             parameters = parameters.OrderBy(p => p.Optional == true).ToList();
 
-            for (var i = 0; i < parameters.Count; i++)
+            var index = 0;
+            foreach (var param in parameters)
             {
-                var param = parameters[i];
                 var paramName = EscapeKeyword(ToFirstLower(param.Name));
 
                 var csharpType = GetCSharpType(param.Type, param.Ref, param.Items, domainName);
@@ -273,9 +275,12 @@ namespace Generator
                 if (param.Optional == true)
                     arg = $"{csharpType}? {paramName} = default";
 
-                var comma = (i == parameters.Count - 1) ? "" : ",";
+                var comma = "";
+                if (index < parameters.Count - 1)
+                    comma = ",";
 
                 sb.AppendLine($"{indent}{arg}{comma}");
+                index++;
             }
         }
 
