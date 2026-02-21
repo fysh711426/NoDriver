@@ -51,8 +51,10 @@ namespace NoDriver.Core
             if (string.IsNullOrWhiteSpace(UserDataDir))
             {
                 _customDataDir = false;
+                //_userDataDir = Path.Combine(
+                //    Path.GetTempPath(), $"uc_{Path.GetRandomFileName()}");
                 _userDataDir = Path.Combine(
-                    Path.GetTempPath(), $"uc_{Path.GetRandomFileName()}");
+                    Path.GetTempPath(), $"uc_{Guid.NewGuid().ToString("n").Substring(0, 8)}");
             }
             //----- UserDataDir -----
 
@@ -150,6 +152,9 @@ namespace NoDriver.Core
                 if (!args.Contains(arg, StringComparer.OrdinalIgnoreCase))
                     args.Add(arg);
             }
+
+            if (_extensions.Any())
+                args.Add($"--load-extension={string.Join(",", _extensions)}");
 
             if (Headless)
                 args.Add("--headless=new");
