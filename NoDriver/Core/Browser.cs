@@ -1,5 +1,4 @@
-﻿using System.Data.Common;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -9,14 +8,14 @@ namespace NoDriver.Core
 {
     public class Browser
     {
-        private Browser() { }
-
-        private Config? _config = null;
+        
         private Process? _process = null;
         private int? _processPid = null;
         private HTTPApi? _http = null;
-        private Connection? _connection = null;
-        private ContraDict? _info = null;
+
+        public Config? Config { get; private set; } = null;
+        public Connection? Connection { get; private set; } = null;
+        public ContraDict? Info { get; private set; } = null;
 
         //private List<string> _targets = new();
         //
@@ -24,34 +23,38 @@ namespace NoDriver.Core
         //private bool _keepUserDataDir = true;
         //private Connection? _connection = null;
 
+        private Browser() 
+        {
+        }
+
         public static async Task<Browser> CreateAsync(Config? config = null)
         {
             var browser = new Browser();
-            browser._config = config ?? new();
+            browser.Config = config ?? new();
             return await browser.StartAsync();
         }
 
         public async Task<Browser> StartAsync()
         {
-            if (_config == null)
+            if (Config == null)
                 throw new Exception("use 'await Browser.CreateAsync()' to create a new instance.");
 
             if (_process != null || _processPid != null)
             {
                 if (_process?.HasExited == true)
-                    return await CreateAsync(_config);
+                    return await CreateAsync(Config);
                 Console.WriteLine("Ignored! This call has no effect when already running.");
                 return this;
             }
 
-            var connectExisting = _config.Host != null && _config.Port != null;
-            if (_config.Host == null || _config.Port == null)
+            var connectExisting = Config.Host != null && Config.Port != null;
+            if (Config.Host == null || Config.Port == null)
             {
-                _config.Host = "127.0.0.1";
-                _config.Port = findFreePort();
+                Config.Host = "127.0.0.1";
+                Config.Port = findFreePort();
             }
 
-            var exePath = _config.BrowserExecutablePath;
+            var exePath = Config.BrowserExecutablePath;
             if (!connectExisting)
             {
                 Console.WriteLine($"BROWSER EXECUTABLE PATH: {exePath}");
@@ -59,7 +62,7 @@ namespace NoDriver.Core
                     throw new FileNotFoundException("Could not determine browser executable.");
             }
 
-            var args = _config.GetArgs()
+            var args = Config.GetArgs()
                 .Select(it => it.Trim())
                 .Aggregate("", (r, it) => r + " " +
                     (it.Contains(" ") ? $"\"{it}\"" : it));
@@ -80,7 +83,7 @@ namespace NoDriver.Core
                 _processPid = _process.Id;
             }
 
-            _http = new HTTPApi(_config.Host, _config.Port.Value);
+            _http = new HTTPApi(Config.Host, Config.Port.Value);
 
             await Task.Delay(250);
             for (var i = 0; i < 5; i++)
@@ -88,7 +91,7 @@ namespace NoDriver.Core
                 try
                 {
                     var data = await _http.GetAsync("version");
-                    _info = data;
+                    Info = data;
                     break;
                 }
                 catch
@@ -99,10 +102,10 @@ namespace NoDriver.Core
                 }
             }
 
-            if (_info == null)
+            if (Info == null)
                 throw new Exception("Failed to connect to browser. If running as root in Linux, you may need Sandbox=false.");
 
-            _connection = new Connection(_info.webSocketDebuggerUrl, this);
+            Connection = new Connection(Info.webSocketDebuggerUrl, this);
 
 
             if (Config.AutodiscoverTargets)
@@ -149,14 +152,10 @@ namespace NoDriver.Core
         }
 
         public async Task<JsonElement> GetAsync(string endpoint, CancellationToken token = default)
-        {
-            return await RequestAsync(endpoint, "GET", null, token);
-        }
+            => await RequestAsync(endpoint, "GET", null, token);
 
         public async Task<JsonElement> PostAsync(string endpoint, object? data = null, CancellationToken token = default)
-        {
-            return await RequestAsync(endpoint, "POST", data, token);
-        }
+            => await RequestAsync(endpoint, "POST", data, token);
 
         private async Task<JsonElement> RequestAsync(
             string endpoint, string method = "GET", object? data = null, CancellationToken token = default)
