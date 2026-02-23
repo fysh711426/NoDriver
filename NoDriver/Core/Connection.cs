@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using NoDriver.Core.Message;
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -6,11 +7,6 @@ using System.Text.Json.Serialization;
 
 namespace NoDriver.Core
 {
-    public class Connection
-    {
-
-    }
-
     public class ProtocolException : Exception
     {
         public int? Code { get; }
@@ -134,6 +130,12 @@ namespace NoDriver.Core
     {
         private static readonly int _receiveBufferSize = 8192 * 4;
 
+        private static readonly JsonSerializerOptions _jsonOptions = new()
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
         private Task? _listenerTask = null;
         private CancellationTokenSource? _cts = null;
         private int _messageIdCounter = 0;
@@ -250,7 +252,7 @@ namespace NoDriver.Core
         // 強型別的發送邏輯
         public async Task<T> SendAsync<T>(string method, object parameters = null, bool isUpdate = false, CancellationToken token = default)
         {
-            if (Closed) 
+            if (Closed)
                 await ConnectAsync(token);
 
             if (WebSocket?.State != WebSocketState.Open)
@@ -278,7 +280,9 @@ namespace NoDriver.Core
             var bytes = Encoding.UTF8.GetBytes(json);
 
             await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
-            return await tx.Task;
+
+            var txTask = await Task.WhenAny(tx.Task, Task.Delay(Timeout.Infinite, token));
+            return await txTask;
         }
 
         public async Task<T> SendOneshotAsync<T>(string method, object parameters = null, CancellationToken token = default)
@@ -312,10 +316,10 @@ namespace NoDriver.Core
                         }
                         while (!result.EndOfMessage);
 
+                        await ProcessMessage(ms, token);
+
                         ms.Position = 0;
-                        using var doc = JsonDocument.Parse(ms);
                         ms.SetLength(0);
-                        ProcessMessage(doc.RootElement);
                     }
                 }
             }
@@ -327,8 +331,38 @@ namespace NoDriver.Core
             }
         }
 
-        private void ProcessMessage(JsonElement message)
+        private async Task ProcessMessage(MemoryStream ms, CancellationToken token)
         {
+            try
+            {
+                using (var doc = JsonDocument.Parse(ms.GetBuffer().AsMemory(0, (int)ms.Length)))
+                {
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("id", out _))
+                    {
+                        var response = root.Deserialize<ProtocolResponse>(_jsonOptions);
+                        if (response == null)
+                            throw new JsonException("ProtocolResponse is null or invalid.");
+                    }
+                    else
+                    {
+                        var @event = root.Deserialize<ProtocolEvent>(_jsonOptions);
+                        if (@event == null)
+                            throw new JsonException("ProtocolEvent is null or invalid.");
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"Failed to parse protocol message. Error: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to processing protocol message. Error: {ex.Message}");
+            }
+
+
             // 判斷是 Command Response 還是 Event
             if (message.TryGetProperty("id", out var idElement))
             {
