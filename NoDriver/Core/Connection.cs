@@ -3,43 +3,26 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace NoDriver.Core
 {
-    public class ProtocolException : Exception
-    {
-        public int? Code { get; }
-
-        public ProtocolException(string message, int? code = null) 
-            : base(message)
-        {
-            Code = code;
-        }
-
-        public override string ToString()
-        {
-            if (Code != null)
-                return $"{Message} [code: {Code}]";
-            return Message;
-        }
-    }
-
     public class SettingClassVarNotAllowedException : Exception
     {
         public SettingClassVarNotAllowedException(string message)
             : base(message) { }
     }
 
-    internal class Transaction
+    public class Transaction
     {
-        protected readonly TaskCompletionSource<object?> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        protected readonly TaskCompletionSource<JsonObject?> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int? Id { get; } = null;
         public string? Method { get; } = null;
         public object? Params { get; } = null;
 
-        public Task<object?> Task => _tcs.Task;
+        public Task<JsonObject?> Task => _tcs.Task;
 
         protected Transaction() 
         {
@@ -60,29 +43,14 @@ namespace NoDriver.Core
 
         public bool HasException => _tcs.Task.IsFaulted;
         
-        public virtual void ProcessResponse(JsonElement response)
+        public virtual void ProcessResponse(ProtocolResponse response)
         {
-            if (response.TryGetProperty("error", out var error))
+            if (response.Error != null)
             {
-                _tcs.SetException(new ProtocolException(error));
+                _tcs.SetException(new ProtocolErrorException(response.Error));
                 return;
             }
-
-            try
-            {
-                if (response.TryGetProperty("result", out var result))
-                {
-                    _tcs.SetResult(result);
-                }
-                else
-                {
-                    _tcs.SetResult(null);
-                }
-            }
-            catch (Exception ex)
-            {
-                _tcs.SetException(ex);
-            }
+            _tcs.SetResult(response.Result);
         }
 
         public override string ToString()
@@ -103,7 +71,7 @@ namespace NoDriver.Core
         }
     }
 
-    internal class EventTransaction : Transaction
+    public class EventTransaction : Transaction
     {
         public object EventValue { get; }
 
@@ -145,7 +113,7 @@ namespace NoDriver.Core
         public ClientWebSocket? WebSocket { get; private set; } = null;
         public dynamic? Target { get; } = null;
 
-        public ConcurrentDictionary<int, ITransaction> Mapper { get; } = new();
+        public ConcurrentDictionary<int, Transaction> Mapper { get; } = new();
         public ConcurrentDictionary<string, List<Delegate>> Handlers { get; } = new();
         public HashSet<string> EnabledDomains { get; } = new();
 
@@ -262,7 +230,7 @@ namespace NoDriver.Core
             //    await self._register_handlers()
 
             var id = Interlocked.Increment(ref _messageIdCounter);
-            var tx = new Transaction<T> { Id = id, Method = method, Params = parameters };
+            var tx = new Transaction { Id = id, Method = method, Params = parameters };
             Mapper[id] = tx;
 
             var payload = new
@@ -272,11 +240,7 @@ namespace NoDriver.Core
                 @params = parameters
             };
 
-            var jsonOptions = new JsonSerializerOptions()
-            { 
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull 
-            };
-            var json = JsonSerializer.Serialize(payload, jsonOptions);
+            var json = JsonSerializer.Serialize(payload, _jsonOptions);
             var bytes = Encoding.UTF8.GetBytes(json);
 
             await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
@@ -343,6 +307,9 @@ namespace NoDriver.Core
                         var response = root.Deserialize<ProtocolResponse>(_jsonOptions);
                         if (response == null)
                             throw new JsonException("ProtocolResponse is null or invalid.");
+
+                        if (_mapper.TryRemove(response.Id, out var tx))
+                            tx.ProcessResponse(response);
                     }
                     else
                     {
@@ -367,22 +334,7 @@ namespace NoDriver.Core
             if (message.TryGetProperty("id", out var idElement))
             {
                 int id = idElement.GetInt32();
-                if (_mapper.TryRemove(id, out var tx))
-                {
-                    if (message.TryGetProperty("error", out var errorElement))
-                    {
-                        tx.SetError(errorElement);
-                    }
-                    else if (message.TryGetProperty("result", out var resultElement))
-                    {
-                        tx.SetResult(resultElement);
-                    }
-                    else
-                    {
-                        // 某些沒有 Result 的空物件
-                        tx.SetResult(JsonDocument.Parse("{}").RootElement);
-                    }
-                }
+                
             }
             else if (message.TryGetProperty("method", out var methodElement))
             {
