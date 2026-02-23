@@ -157,12 +157,12 @@ namespace NoDriver.Core
             Browser = browser;
         }
 
-        public async Task ConnectAsync()
+        public async Task ConnectAsync(CancellationToken token = default)
         {
-            if (!Closed) 
+            if (!Closed)
                 return;
 
-            await DisconnectAsync();
+            await DisconnectAsync(token);
 
             _cts = new CancellationTokenSource();
             WebSocket = new ClientWebSocket();
@@ -171,7 +171,7 @@ namespace NoDriver.Core
             
             try
             {
-                await WebSocket.ConnectAsync(new Uri(WebSocketUrl), _cts.Token);
+                await WebSocket.ConnectAsync(new Uri(WebSocketUrl), token);
                 _listenerTask = Task.Run(() => 
                     ListenLoopAsync(_cts.Token));
             }
@@ -184,7 +184,7 @@ namespace NoDriver.Core
             //await self._register_handlers()
         }
 
-        public async Task DisconnectAsync()
+        public async Task DisconnectAsync(CancellationToken token = default)
         {
             if (WebSocket != null)
             {
@@ -194,12 +194,9 @@ namespace NoDriver.Core
                 {
                     try
                     {
-                        using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(1)))
-                        {
-                            await WebSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closing", timeoutCts.Token);
-                            if (_listenerTask != null)
-                                await Task.WhenAny(_listenerTask, Task.Delay(500));
-                        }
+                        await WebSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
+                        if (_listenerTask != null)
+                            await Task.WhenAny(_listenerTask, Task.Delay(Timeout.Infinite, token));
                     }
                     catch { }
                 }
@@ -244,17 +241,17 @@ namespace NoDriver.Core
         // --- 核心發送與接收邏輯 ---
 
         // 動態支援 Python `send(cdp_obj)` 的封裝方式
-        public async Task<dynamic> SendAsync(dynamic cdpCmd, bool isUpdate = false)
+        public async Task<dynamic> SendAsync(dynamic cdpCmd, bool isUpdate = false, CancellationToken token = default)
         {
             // 這裡假設 cdpCmd 是一個包含 Method 與 Params 的物件
-            return await SendAsync<JsonElement>((string)cdpCmd.Method, (object)cdpCmd.Params, isUpdate);
+            return await SendAsync<JsonElement>((string)cdpCmd.Method, (object)cdpCmd.Params, isUpdate, token);
         }
 
         // 強型別的發送邏輯
-        public async Task<T> SendAsync<T>(string method, object parameters = null, bool isUpdate = false)
+        public async Task<T> SendAsync<T>(string method, object parameters = null, bool isUpdate = false, CancellationToken token = default)
         {
             if (Closed) 
-                await ConnectAsync();
+                await ConnectAsync(token);
 
             if (WebSocket?.State != WebSocketState.Open)
                 throw new InvalidOperationException("Failed to send command: WebSocket connection is not established.");
@@ -264,7 +261,7 @@ namespace NoDriver.Core
 
             var id = Interlocked.Increment(ref _messageIdCounter);
             var tx = new Transaction<T> { Id = id, Method = method, Params = parameters };
-            _mapper[id] = tx;
+            Mapper[id] = tx;
 
             var payload = new
             {
@@ -280,13 +277,13 @@ namespace NoDriver.Core
             var json = JsonSerializer.Serialize(payload, jsonOptions);
             var bytes = Encoding.UTF8.GetBytes(json);
 
-            await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
+            await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
             return await tx.Task;
         }
 
-        public async Task<T> SendOneshotAsync<T>(string method, object parameters = null)
+        public async Task<T> SendOneshotAsync<T>(string method, object parameters = null, CancellationToken token = default)
         {
-            return await SendAsync(method, parameters, true);
+            return await SendAsync<T>(method, parameters, true, token);
         }
 
         private async Task ListenLoopAsync(CancellationToken token)
@@ -399,7 +396,10 @@ namespace NoDriver.Core
         {
             try
             {
-                await DisconnectAsync();
+                using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+                {
+                    await DisconnectAsync(timeoutCts.Token);
+                }
             }
             catch { }
 
