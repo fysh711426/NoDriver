@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Reflection;
+using System.Runtime.Intrinsics.Arm;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -219,28 +220,58 @@ namespace NoDriver.Core
             }
         }
 
+        private static bool IsDefaultDomain(string domainName)
+        {
+            return domainName == "Target" || domainName == "Storage" || domainName == "Input";
+        }
+
         private async Task RegisterHandlersAsync()
         {
-            var enabledDomains = EnabledDomains.ToList();
-            var eventNames = Handlers.Keys.ToList();
+            var activeDomains = new HashSet<string>();
 
-            foreach (var eventName in eventNames)
+            foreach (var (eventName, list) in Handlers)
             {
-                if (Handlers.TryGetValue(eventName, out var list))
+                if (list == null || list.Count == 0)
                 {
-                    lock (list)
+                    Handlers.TryRemove(eventName, out _);
+                    continue;
+                }
+
+                var domainName = eventName.Split('.')[0];
+                if (IsDefaultDomain(domainName))
+                    continue;
+
+                activeDomains.Add(domainName);
+
+                if (!EnabledDomains.ContainsKey(domainName))
+                {
+                    try
                     {
-                        if (list.Count == 0)
+                        if (EnabledDomains.TryAdd(domainName, 1))
                         {
-                            Handlers.TryRemove(eventName, out _);
-                            continue;
+                            Console.WriteLine($"Registered domain: {domainName}.");
+                            await SendAsync($"{domainName}.Enable", null, isUpdate: true);
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to enable domain {domainName}. Error: {ex.Message}");
+                        EnabledDomains.TryRemove(domainName, out _);
+                        activeDomains.Remove(domainName);
                     }
                 }
             }
-        }
 
-        // --- 核心發送與接收邏輯 ---
+            var enabledDomains = EnabledDomains.ToList();
+            foreach (var (domainName, _) in enabledDomains)
+            {
+                if (IsDefaultDomain(domainName))
+                    continue;
+
+                if (!activeDomains.Contains(domainName))
+                    EnabledDomains.TryRemove(domainName, out _);
+            }
+        }
 
         // 動態支援 Python `send(cdp_obj)` 的封裝方式
         public async Task<dynamic> SendAsync(dynamic cdpCmd, bool isUpdate = false, CancellationToken token = default)

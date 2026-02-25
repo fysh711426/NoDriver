@@ -37,9 +37,9 @@ namespace NoDriver.Core.Helper
         public Task HandleAsync(ProtocolEvent rawEvent)
         {
             var @event = rawEvent.Params.Deserialize<TEvent>(JsonProtocolSerialization.Settings);
-            if (@event != null)
-                return _handler(@event);
-            return Task.CompletedTask;
+            if (@event == null)
+                throw new InvalidOperationException($"Failed to deserialize event to {typeof(TEvent).Name}.");
+            return _handler(@event);
         }
     }
 }
