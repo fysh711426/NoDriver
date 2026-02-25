@@ -1,10 +1,13 @@
-﻿using NoDriver.Core.Message;
+﻿using NoDriver.Core.Helper;
+using NoDriver.Core.Interface;
+using NoDriver.Core.Message;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 
 namespace NoDriver.Core
 {
@@ -73,9 +76,9 @@ namespace NoDriver.Core
 
     public class EventTransaction : Transaction
     {
-        public object EventValue { get; }
+        public JsonObject EventValue { get; }
 
-        public EventTransaction(object eventObject) : base()
+        public EventTransaction(JsonObject eventObject) : base()
         {
             _tcs.SetResult(eventObject);
             EventValue = eventObject;
@@ -98,12 +101,6 @@ namespace NoDriver.Core
     {
         private static readonly int _receiveBufferSize = 8192 * 4;
 
-        private static readonly JsonSerializerOptions _jsonOptions = new()
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
-
         private Task? _listenerTask = null;
         private CancellationTokenSource? _cts = null;
         private int _messageIdCounter = 0;
@@ -114,8 +111,8 @@ namespace NoDriver.Core
         public dynamic? Target { get; } = null;
 
         public ConcurrentDictionary<int, Transaction> Mapper { get; } = new();
-        public ConcurrentDictionary<string, List<Delegate>> Handlers { get; } = new();
-        public HashSet<string> EnabledDomains { get; } = new();
+        public ConcurrentDictionary<string, List<IDomainEventHandlerWrapper>> Handlers { get; } = new();
+        public ConcurrentDictionary<string, byte> EnabledDomains { get; } = new();
 
         public bool Closed => 
             WebSocket == null || WebSocket.State != WebSocketState.Open;
@@ -142,8 +139,7 @@ namespace NoDriver.Core
             try
             {
                 await WebSocket.ConnectAsync(new Uri(WebSocketUrl), token);
-                _listenerTask = Task.Run(() => 
-                    ListenLoopAsync(_cts.Token));
+                _listenerTask = Task.Run(async () => await ListenLoopAsync(_cts.Token));
             }
             catch (Exception ex)
             {
@@ -151,14 +147,14 @@ namespace NoDriver.Core
                 throw;
             }
 
-            //await self._register_handlers()
+            await RegisterHandlersAsync();
         }
 
         public async Task DisconnectAsync(CancellationToken token = default)
         {
             if (WebSocket != null)
             {
-                _enabledDomains.Clear();
+                EnabledDomains.Clear();
 
                 if (WebSocket.State == WebSocketState.Open || WebSocket.State == WebSocketState.CloseReceived)
                 {
@@ -182,28 +178,64 @@ namespace NoDriver.Core
             }
         }
 
-        // --- 事件註冊機制 ---
+        private static string GetMethodName(MemberInfo type) =>
+            type.GetCustomAttribute<MethodNameAttribute>()?.MethodName ??
+                throw new Exception($"{nameof(MethodNameAttribute)} is required on type {type.Name} but it is not presented.");
 
-        public void RegisterHandler<TEvent>(string eventName, Action<TEvent> handler)
+        public void AddHandler<TEvent>(AsyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
         {
-            var list = _handlers.GetOrAdd(eventName, _ => new List<Delegate>());
-            lock (list) { list.Add(handler); }
+            if (handler == null) 
+                throw new Exception("The event handler cannot be null.");
+
+            var eventName = GetMethodName(typeof(TEvent));
+            var wrapper = new DomainEventHandlerWrapper<TEvent>(handler);
+            var list = Handlers.GetOrAdd(eventName, _ => new());
+            lock (list) 
+            { 
+                list.Add(wrapper); 
+            }
         }
 
-        public void RegisterHandler<TEvent>(string eventName, Func<TEvent, Task> asyncHandler)
+        public void RemoveHandler<TEvent>(AsyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
         {
-            var list = _handlers.GetOrAdd(eventName, _ => new List<Delegate>());
-            lock (list) { list.Add(asyncHandler); }
-        }
-
-        public void RemoveHandler(string eventName, Delegate handler = null)
-        {
-            if (_handlers.TryGetValue(eventName, out var list))
+            var eventName = GetMethodName(typeof(TEvent));
+            if (Handlers.TryGetValue(eventName, out var list))
             {
                 lock (list)
                 {
-                    if (handler != null) list.Remove(handler);
-                    else list.Clear();
+                    if (handler != null)
+                    {
+                        var wrappers = list.Where(it => it.RawHandler.Equals(handler)).ToList();
+                        foreach (var wrapper in wrappers)
+                        {
+                            list.Remove(wrapper);
+                        }
+                    }
+                    else
+                    {
+                        list.Clear();
+                    }
+                }
+            }
+        }
+
+        private async Task RegisterHandlersAsync()
+        {
+            var enabledDomains = EnabledDomains.ToList();
+            var eventNames = Handlers.Keys.ToList();
+
+            foreach (var eventName in eventNames)
+            {
+                if (Handlers.TryGetValue(eventName, out var list))
+                {
+                    lock (list)
+                    {
+                        if (list.Count == 0)
+                        {
+                            Handlers.TryRemove(eventName, out _);
+                            continue;
+                        }
+                    }
                 }
             }
         }
@@ -225,6 +257,9 @@ namespace NoDriver.Core
 
             if (WebSocket?.State != WebSocketState.Open)
                 throw new InvalidOperationException("Failed to send command: WebSocket connection is not established.");
+
+            if (!isUpdate)
+                await RegisterHandlersAsync();
 
             //if (!isUpdate)
             //    await self._register_handlers()
@@ -280,10 +315,12 @@ namespace NoDriver.Core
                         }
                         while (!result.EndOfMessage);
 
-                        await ProcessMessage(ms, token);
+                        var message = Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
 
                         ms.Position = 0;
                         ms.SetLength(0);
+
+                        _ = Task.Run(async () => await ProcessMessage(message, token));
                     }
                 }
             }
@@ -295,27 +332,43 @@ namespace NoDriver.Core
             }
         }
 
-        private async Task ProcessMessage(MemoryStream ms, CancellationToken token)
+        private async Task ProcessMessage(string message, CancellationToken token)
         {
             try
             {
-                using (var doc = JsonDocument.Parse(ms.GetBuffer().AsMemory(0, (int)ms.Length)))
-                {
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("id", out _))
-                    {
-                        var response = root.Deserialize<ProtocolResponse>(_jsonOptions);
-                        if (response == null)
-                            throw new JsonException("ProtocolResponse is null or invalid.");
+                var node = JsonNode.Parse(message);
+                if (node == null)
+                    throw new JsonException("Message is null or invalid.");
 
-                        if (_mapper.TryRemove(response.Id, out var tx))
-                            tx.ProcessResponse(response);
-                    }
-                    else
+                if (node["id"] != null)
+                {
+                    var response = node.Deserialize<ProtocolResponse>(JsonProtocolSerialization.Settings);
+                    if (response == null)
+                        throw new JsonException("ProtocolResponse is null or invalid.");
+
+                    if (Mapper.TryRemove(response.Id, out var tx))
+                        tx.ProcessResponse(response);
+                }
+                else
+                {
+                    var @event = node.Deserialize<ProtocolEvent>(JsonProtocolSerialization.Settings);
+                    if (@event == null)
+                        throw new JsonException("ProtocolEvent is null or invalid.");
+
+                    var eventName = @event.Method;
+                    if (Handlers.TryGetValue(eventName, out var wrappers))
                     {
-                        var @event = root.Deserialize<ProtocolEvent>(_jsonOptions);
-                        if (@event == null)
-                            throw new JsonException("ProtocolEvent is null or invalid.");
+                        foreach (var wrapper in wrappers)
+                        {
+                            try
+                            {
+                                await wrapper.HandleAsync(@event);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Exception in callback for event {eventName} => {ex.Message}");
+                            }
+                        }
                     }
                 }
             }
@@ -327,54 +380,6 @@ namespace NoDriver.Core
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed to processing protocol message. Error: {ex.Message}");
-            }
-
-
-            // 判斷是 Command Response 還是 Event
-            if (message.TryGetProperty("id", out var idElement))
-            {
-                int id = idElement.GetInt32();
-                
-            }
-            else if (message.TryGetProperty("method", out var methodElement))
-            {
-                // 這是一個事件 (Event)
-                string eventName = methodElement.GetString();
-                JsonElement paramsElement = message.TryGetProperty("params", out var p) ? p : default;
-
-                if (_handlers.TryGetValue(eventName, out var callbacks))
-                {
-                    Delegate[] delegatesToInvoke;
-                    lock (callbacks) { delegatesToInvoke = callbacks.ToArray(); }
-
-                    foreach (var callback in delegatesToInvoke)
-                    {
-                        try
-                        {
-                            // 根據 Delegate 期待的參數型別進行反序列化並觸發
-                            var paramType = callback.Method.GetParameters()[0].ParameterType;
-                            object arg = paramType == typeof(JsonElement) ? paramsElement : paramsElement.Deserialize(paramType);
-
-                            if (callback is Delegate d && d.Method.ReturnType == typeof(Task))
-                            {
-                                // Async 處理程序 (Fire and Forget，對應 Python create_task)
-                                _ = ((Task)d.DynamicInvoke(arg)).ContinueWith(t =>
-                                {
-                                    if (t.IsFaulted) Console.WriteLine($"Event async callback error: {t.Exception}");
-                                });
-                            }
-                            else
-                            {
-                                // Sync 處理程序
-                                callback.DynamicInvoke(arg);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Exception in callback for event {eventName} => {ex}");
-                        }
-                    }
-                }
             }
         }
 
@@ -431,29 +436,6 @@ namespace NoDriver.Core
         public object Target { get; private set; } // 對應 cdp.target
         public object Browser { get; private set; } // 對應 _browser.Browser
 
-        public Connection(string websocketUrl, object target = null, object browser = null)
-        {
-            _websocketUrl = websocketUrl;
-            Target = target;
-            Browser = browser;
-        }
-
-        public bool IsClosed => _websocket == null || _websocket.State != WebSocketState.Open;
-
-        public void AddHandler<T>(Action<T, Connection> handler)
-        {
-            var type = typeof(T);
-            if (!_handlers.ContainsKey(type))
-                _handlers[type] = new List<Delegate>();
-
-            _handlers[type].Add(handler);
-        }
-
-        public void RemoveHandler(Type eventType)
-        {
-            if (_handlers.ContainsKey(eventType))
-                _handlers.Remove(eventType);
-        }
         public async Task ConnectAsync()
         {
             if (IsClosed)
