@@ -1,4 +1,5 @@
-﻿using NoDriver.Core.Helper;
+﻿using NoDriver.Cdp;
+using NoDriver.Core.Helper;
 using NoDriver.Core.Interface;
 using NoDriver.Core.Message;
 using System.Collections.Concurrent;
@@ -7,32 +8,22 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using static NoDriver.Cdp.Network;
 
 namespace NoDriver.Core
 {
-    public class SettingClassVarNotAllowedException : Exception
+    public class Transaction<TRawParams>
     {
-        public SettingClassVarNotAllowedException(string message)
-            : base(message) { }
-    }
+        protected readonly TaskCompletionSource<JsonObject> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public class Transaction
-    {
-        protected readonly TaskCompletionSource<JsonObject?> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Id { get; }
+        public string Method { get; }
+        public TRawParams Params { get; }
 
-        public int? Id { get; } = null;
-        public string? Method { get; } = null;
-        public object? Params { get; } = null;
+        public Task<JsonObject> Task => _tcs.Task;
 
-        public Task<JsonObject?> Task => _tcs.Task;
-
-        protected Transaction() 
+        public Transaction(int id, string method, TRawParams @params)
         {
-        }
-
-        public Transaction(string method, object? @params)
-        {
+            Id = id;
             Method = method;
             Params = @params;
         }
@@ -45,15 +36,13 @@ namespace NoDriver.Core
         });
 
         public bool HasException => _tcs.Task.IsFaulted;
-        
+
         public virtual void ProcessResponse(ProtocolResponse response)
         {
             if (response.Error != null)
-            {
                 _tcs.SetException(new ProtocolErrorException(response.Error));
-                return;
-            }
-            _tcs.SetResult(response.Result);
+            else if (response.Result != null)
+                _tcs.SetResult(response.Result);
         }
 
         public override string ToString()
@@ -66,32 +55,9 @@ namespace NoDriver.Core
                 status = "finished";
             else
                 status = "pending";
-            
-            return $"<{GetType().Name}\n\t" +
+
+            return $"<{typeof(TRawParams).Name}\n\t" +
                    $"Method: {Method}\n\t" +
-                   $"Status: {status}\n\t" +
-                   $"Success: {success}>";
-        }
-    }
-
-    public class EventTransaction : Transaction
-    {
-        public JsonObject EventValue { get; }
-
-        public EventTransaction(JsonObject eventObject) : base()
-        {
-            _tcs.SetResult(eventObject);
-            EventValue = eventObject;
-        }
-
-        public override string ToString()
-        {
-            var status = "finished";
-            var success = !HasException;
-            var type = EventValue.GetType();
-
-            return $"<{GetType().Name}\n\t" +
-                   $"Event: {type.Namespace}.{type.Name}\n\t" +
                    $"Status: {status}\n\t" +
                    $"Success: {success}>";
         }
@@ -110,7 +76,7 @@ namespace NoDriver.Core
         public ClientWebSocket? WebSocket { get; private set; } = null;
         public dynamic? Target { get; } = null;
 
-        public ConcurrentDictionary<int, Transaction> Mapper { get; } = new();
+        public ConcurrentDictionary<int, Transaction<ICommand>> Mapper { get; } = new();
         public ConcurrentDictionary<string, List<IDomainEventHandlerWrapper>> Handlers { get; } = new();
         public ConcurrentDictionary<string, byte> EnabledDomains { get; } = new();
 
@@ -297,29 +263,51 @@ namespace NoDriver.Core
                 await RegisterHandlersAsync();
 
             var id = Interlocked.Increment(ref _messageIdCounter);
-            var tx = new Transaction { Id = id, Method = method, Params = parameters };
+
+            var methodName = GetMethodName(command.GetType());
+
+            var tx = new Transaction<ICommand>(id, methodName, command);
 
             Mapper[id] = tx;
 
-            var payload = new
+            using (var delayCts = CancellationTokenSource.CreateLinkedTokenSource(token))
             {
-                id = id,
-                method = method,
-                @params = parameters
-            };
+                try
+                {
+                    var request = new ProtocolRequest<ICommand>
+                    {
+                        Id = id,
+                        Method = methodName,
+                        Params = command
+                    };
 
-            var json = JsonSerializer.Serialize(payload, JsonProtocolSerialization.Settings);
-            var bytes = Encoding.UTF8.GetBytes(json);
+                    var json = JsonSerializer.Serialize(request, JsonProtocolSerialization.Settings);
+                    var bytes = Encoding.UTF8.GetBytes(json);
 
-            await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
+                    await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
 
-            var txTask = await Task.WhenAny(tx.Task, Task.Delay(Timeout.Infinite, token));
-            return await txTask;
+                    var completedTask = await Task.WhenAny(tx.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
+                    if (completedTask != tx.Task)
+                        await completedTask;
+                }
+                finally
+                {
+                    delayCts.Cancel();
+                    Mapper.TryRemove(id, out _);
+                }
+            }
+            
+            var responseRaw = await tx.Task;
+            var response = responseRaw.Deserialize<TResponse>(JsonProtocolSerialization.Settings);
+            if (response == null)
+                throw new ArgumentException("Failed to parse protocol response.");
+            return response;
         }
 
-        private async Task<T> SendOneshotAsync<T>(string method, object parameters = null, CancellationToken token = default)
+        private async Task SendOneshotAsync<TResponse>(
+            ICommand<TResponse> command, CancellationToken token = default) where TResponse : IType
         {
-            return await SendAsync<T>(method, parameters, true, token);
+            await SendAsync(command, true, token);
         }
 
         private async Task ListenLoopAsync(CancellationToken token)
@@ -445,39 +433,6 @@ namespace NoDriver.Core
                 _cts?.Dispose();
                 WebSocket?.Dispose();
             }
-        }
-    }
-
-
-
-
-
-
-
-    public class Connection : IDisposable
-    {
-        public async Task<JToken> SendAsync(string method, object parameters = null, bool isUpdate = false)
-        {
-            if (IsClosed) await ConnectAsync();
-            if (!isUpdate) await RegisterHandlersAsync();
-
-            int id = Interlocked.Increment(ref _count);
-            var tcs = new TaskCompletionSource<JToken>();
-            _mapper[id] = tcs;
-
-            var request = new
-            {
-                id,
-                method,
-        params = parameters
-            };
-
-            string json = Newtonsoft.Json.JsonConvert.SerializeObject(request);
-            byte[] bytes = Encoding.UTF8.GetBytes(json);
-
-            await _websocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
-
-            return await tcs.Task;
         }
     }
 }
