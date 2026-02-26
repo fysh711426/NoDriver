@@ -2,13 +2,12 @@
 using NoDriver.Core.Interface;
 using NoDriver.Core.Message;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Reflection;
-using System.Runtime.Intrinsics.Arm;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using static NoDriver.Cdp.Network;
 
 namespace NoDriver.Core
 {
@@ -187,17 +186,37 @@ namespace NoDriver.Core
         {
             if (handler == null) 
                 throw new Exception("The event handler cannot be null.");
+            AddHandlerInternal(new DomainEventHandlerWrapper<TEvent>(handler));
+        }
 
+        public void AddHandler<TEvent>(SyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
+        {
+            if (handler == null)
+                throw new Exception("The event handler cannot be null.");
+            AddHandlerInternal(new DomainEventHandlerWrapper<TEvent>(handler));
+        }
+
+        private void AddHandlerInternal<TEvent>(DomainEventHandlerWrapper<TEvent> wrapper) where TEvent : IEvent
+        {
             var eventName = GetMethodName(typeof(TEvent));
-            var wrapper = new DomainEventHandlerWrapper<TEvent>(handler);
             var list = Handlers.GetOrAdd(eventName, _ => new());
-            lock (list) 
-            { 
-                list.Add(wrapper); 
+            lock (list)
+            {
+                list.Add(wrapper);
             }
         }
 
         public void RemoveHandler<TEvent>(AsyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
+        {
+            RemoveHandlerInternal<TEvent>(handler);
+        }
+
+        public void RemoveHandler<TEvent>(SyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
+        {
+            RemoveHandlerInternal<TEvent>(handler);
+        }
+
+        private void RemoveHandlerInternal<TEvent>(Delegate handler) where TEvent : IEvent
         {
             var eventName = GetMethodName(typeof(TEvent));
             if (Handlers.TryGetValue(eventName, out var list))
@@ -205,17 +224,9 @@ namespace NoDriver.Core
                 lock (list)
                 {
                     if (handler != null)
-                    {
-                        var wrappers = list.Where(it => it.RawHandler.Equals(handler)).ToList();
-                        foreach (var wrapper in wrappers)
-                        {
-                            list.Remove(wrapper);
-                        }
-                    }
+                        list.RemoveAll(it => it.RawHandler.Equals(handler));
                     else
-                    {
                         list.Clear();
-                    }
                 }
             }
         }
@@ -273,15 +284,8 @@ namespace NoDriver.Core
             }
         }
 
-        // 動態支援 Python `send(cdp_obj)` 的封裝方式
-        public async Task<dynamic> SendAsync(dynamic cdpCmd, bool isUpdate = false, CancellationToken token = default)
-        {
-            // 這裡假設 cdpCmd 是一個包含 Method 與 Params 的物件
-            return await SendAsync<JsonElement>((string)cdpCmd.Method, (object)cdpCmd.Params, isUpdate, token);
-        }
-
-        // 強型別的發送邏輯
-        public async Task<T> SendAsync<T>(string method, object parameters = null, bool isUpdate = false, CancellationToken token = default)
+        public async Task<TResponse> SendAsync<TResponse>(
+            ICommand<TResponse> command, bool isUpdate = false, CancellationToken token = default) where TResponse : IType
         {
             if (Closed)
                 await ConnectAsync(token);
@@ -292,11 +296,9 @@ namespace NoDriver.Core
             if (!isUpdate)
                 await RegisterHandlersAsync();
 
-            //if (!isUpdate)
-            //    await self._register_handlers()
-
             var id = Interlocked.Increment(ref _messageIdCounter);
             var tx = new Transaction { Id = id, Method = method, Params = parameters };
+
             Mapper[id] = tx;
 
             var payload = new
@@ -306,7 +308,7 @@ namespace NoDriver.Core
                 @params = parameters
             };
 
-            var json = JsonSerializer.Serialize(payload, _jsonOptions);
+            var json = JsonSerializer.Serialize(payload, JsonProtocolSerialization.Settings);
             var bytes = Encoding.UTF8.GetBytes(json);
 
             await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
@@ -315,7 +317,7 @@ namespace NoDriver.Core
             return await txTask;
         }
 
-        public async Task<T> SendOneshotAsync<T>(string method, object parameters = null, CancellationToken token = default)
+        private async Task<T> SendOneshotAsync<T>(string method, object parameters = null, CancellationToken token = default)
         {
             return await SendAsync<T>(method, parameters, true, token);
         }
@@ -454,154 +456,6 @@ namespace NoDriver.Core
 
     public class Connection : IDisposable
     {
-        private ClientWebSocket _websocket;
-        private readonly string _websocketUrl;
-        private readonly ConcurrentDictionary<int, TaskCompletionSource<JToken>> _mapper = new();
-        private readonly Dictionary<Type, List<Delegate>> _handlers = new();
-        private readonly List<object> _enabledDomains = new();
-        private CancellationTokenSource _listenerCts;
-        private int _count = 0;
-        private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
-
-        public bool Attached { get; set; }
-        public object Target { get; private set; } // 對應 cdp.target
-        public object Browser { get; private set; } // 對應 _browser.Browser
-
-        public async Task ConnectAsync()
-        {
-            if (IsClosed)
-            {
-                _websocket = new ClientWebSocket();
-                await _websocket.ConnectAsync(new Uri(_websocketUrl), CancellationToken.None);
-
-                _listenerCts = new CancellationTokenSource();
-                _ = Task.Run(() => ListenLoop(_listenerCts.Token)); // 啟動背景監聽
-
-                await RegisterHandlersAsync();
-            }
-        }
-
-        //public async Task DisconnectAsync()
-        //{
-        //    _listenerCts?.Cancel();
-        //    if (_websocket != null)
-        //    {
-        //        await _websocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
-        //        _websocket.Dispose();
-        //        _websocket = null;
-        //    }
-        //    _enabledDomains.Clear();
-        //}
-
-        private async Task ListenLoop(CancellationToken token)
-        {
-            var buffer = new byte[1024 * 1024]; // 1MB buffer
-            try
-            {
-                while (!token.IsCancellationRequested && _websocket.State == WebSocketState.Open)
-                {
-                    var result = await _websocket.ReceiveAsync(new ArraySegment<byte>(buffer), token);
-                    var rawJson = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    var message = JObject.Parse(rawJson);
-
-                    if (message.ContainsKey("id"))
-                    {
-                        // 處理 Command 回傳
-                        int id = message["id"].Value<int>();
-                        if (_mapper.TryRemove(id, out var tcs))
-                        {
-                            tcs.SetResult(message);
-                        }
-                    }
-                    else
-                    {
-                        // 處理事件 (Events)
-                        await DispatchEvent(message);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"WebSocket Error: {ex.Message}");
-            }
-        }
-
-        private async Task RegisterHandlersAsync()
-        {
-            // 1. 複製目前的 domain 列表，用來比對哪些 domain 不再需要 (雖然 CDP 通常不建議隨便 disable)
-            var currentEnabled = _enabledDomains.ToList();
-            var domainsToKeep = new List<string>();
-
-            // 2. 遍歷所有已註冊的 Handler
-            // 注意：Python 的 self.handlers.copy() 是為了執行緒安全
-            Dictionary<Type, List<Delegate>> handlersCopy;
-            lock (_handlers)
-            {
-                handlersCopy = new Dictionary<Type, List<Delegate>>(_handlers);
-            }
-
-            foreach (var entry in handlersCopy)
-            {
-                Type eventType = entry.Key;
-                if (entry.Value.Count == 0) continue;
-
-                // 3. 獲取該事件所屬的 Domain 名稱
-                // 假設你的 CDP 類別結構是 CDP.Network.RequestWillBeSent
-                string domainName = GetDomainNameFromType(eventType);
-
-                if (string.IsNullOrEmpty(domainName)) continue;
-
-                // 預設啟用的 Domain (對應 Python 的 target, storage, input_)
-                if (domainName == "Target" || domainName == "Storage" || domainName == "Input")
-                    continue;
-
-                if (!_enabledDomains.Contains(domainName))
-                {
-                    try
-                    {
-                        logger.Debug($"Registering domain: {domainName}");
-                        _enabledDomains.Add(domainName);
-
-                        // 4. 發送啟動指令，例如 "Network.enable"
-                        // _is_update = true 避免遞迴呼叫
-                        await SendAsync($"{domainName}.enable", null, isUpdate: true);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.Error($"Failed to enable domain {domainName}", ex);
-                        _enabledDomains.Remove(domainName);
-                    }
-                }
-
-                domainsToKeep.Add(domainName);
-            }
-
-            // 5. 清理不再有 Handler 訂閱的 Domain (可選，視你的需求而定)
-            foreach (var domain in currentEnabled)
-            {
-                if (!domainsToKeep.Contains(domain))
-                {
-                    // 在某些自動化情境，我們會在這裡呼叫 domain.disable
-                    _enabledDomains.Remove(domain);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 輔助方法：從類別型別推導 CDP Domain 名稱
-        /// </summary>
-        private string GetDomainNameFromType(Type type)
-        {
-            // 方案 A：從命名空間解析 (例如 MyProject.CDP.Network.Event -> Network)
-            var nsParts = type.Namespace?.Split('.');
-            if (nsParts?.Length >= 2)
-            {
-                return nsParts[nsParts.Length - 1];
-            }
-
-            // 方案 B：如果類別有名稱慣例 (例如 NetworkRequestEvent)
-            return type.Name.Replace("Event", "");
-        }
         public async Task<JToken> SendAsync(string method, object parameters = null, bool isUpdate = false)
         {
             if (IsClosed) await ConnectAsync();
@@ -624,10 +478,6 @@ namespace NoDriver.Core
             await _websocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
 
             return await tcs.Task;
-        }
-        public void Dispose()
-        {
-            DisconnectAsync().GetAwaiter().GetResult();
         }
     }
 }
