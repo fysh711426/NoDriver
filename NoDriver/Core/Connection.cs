@@ -1,5 +1,4 @@
-﻿using NoDriver.Cdp;
-using NoDriver.Core.Helper;
+﻿using NoDriver.Core.Helper;
 using NoDriver.Core.Interface;
 using NoDriver.Core.Message;
 using System.Collections.Concurrent;
@@ -8,6 +7,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using static NoDriver.Cdp.Network;
 
 namespace NoDriver.Core
 {
@@ -40,9 +40,14 @@ namespace NoDriver.Core
         public virtual void ProcessResponse(ProtocolResponse response)
         {
             if (response.Error != null)
-                _tcs.SetException(new ProtocolErrorException(response.Error));
+                _tcs.TrySetException(new ProtocolErrorException(response.Error));
             else if (response.Result != null)
-                _tcs.SetResult(response.Result);
+                _tcs.TrySetResult(response.Result);
+        }
+
+        public virtual void Cancel(Exception ex)
+        {
+            _tcs.TrySetException(ex);
         }
 
         public override string ToString()
@@ -113,7 +118,7 @@ namespace NoDriver.Core
                 throw;
             }
 
-            await RegisterHandlersAsync();
+            await RegisterHandlersAsync(token);
         }
 
         public async Task DisconnectAsync(CancellationToken token = default)
@@ -128,7 +133,21 @@ namespace NoDriver.Core
                     {
                         await WebSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
                         if (_listenerTask != null)
-                            await Task.WhenAny(_listenerTask, Task.Delay(Timeout.Infinite, token));
+                        {
+                            using (var delayCts = CancellationTokenSource.CreateLinkedTokenSource(token))
+                            {
+                                try
+                                {
+                                    var completedTask = await Task.WhenAny(_listenerTask, Task.Delay(Timeout.Infinite, delayCts.Token));
+                                    if (completedTask != _listenerTask)
+                                        await completedTask;
+                                }
+                                finally
+                                {
+                                    delayCts.Cancel();
+                                }
+                            }
+                        }
                     }
                     catch { }
                 }
@@ -140,6 +159,10 @@ namespace NoDriver.Core
                 WebSocket = null;
                 _cts?.Dispose();
                 _cts = null;
+                foreach (var (_, tx) in Mapper)
+                {
+                    tx.Cancel(new ObjectDisposedException("Connection closed."));
+                }
                 Console.WriteLine($"Closed WebSocket connection to {WebSocketUrl}");
             }
         }
@@ -202,7 +225,7 @@ namespace NoDriver.Core
             return domainName == "Target" || domainName == "Storage" || domainName == "Input";
         }
 
-        private async Task RegisterHandlersAsync()
+        private async Task RegisterHandlersAsync(CancellationToken token)
         {
             var activeDomains = new HashSet<string>();
 
@@ -227,7 +250,7 @@ namespace NoDriver.Core
                         if (EnabledDomains.TryAdd(domainName, 1))
                         {
                             Console.WriteLine($"Registered domain: {domainName}.");
-                            await SendAsync($"{domainName}.Enable", null, isUpdate: true);
+                            await SendAsync($"{domainName}.Enable", true, token);
                         }
                     }
                     catch (Exception ex)
@@ -260,7 +283,7 @@ namespace NoDriver.Core
                 throw new InvalidOperationException("Failed to send command: WebSocket connection is not established.");
 
             if (!isUpdate)
-                await RegisterHandlersAsync();
+                await RegisterHandlersAsync(token);
 
             var id = Interlocked.Increment(ref _messageIdCounter);
 
@@ -270,38 +293,44 @@ namespace NoDriver.Core
 
             Mapper[id] = tx;
 
-            using (var delayCts = CancellationTokenSource.CreateLinkedTokenSource(token))
+            try
             {
-                try
+                var request = new ProtocolRequest<ICommand>
                 {
-                    var request = new ProtocolRequest<ICommand>
+                    Id = id,
+                    Method = methodName,
+                    Params = command
+                };
+
+                var json = JsonSerializer.Serialize(request, JsonProtocolSerialization.Settings);
+                var bytes = Encoding.UTF8.GetBytes(json);
+
+                await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
+
+                using (var delayCts = CancellationTokenSource.CreateLinkedTokenSource(token))
+                {
+                    try
                     {
-                        Id = id,
-                        Method = methodName,
-                        Params = command
-                    };
-
-                    var json = JsonSerializer.Serialize(request, JsonProtocolSerialization.Settings);
-                    var bytes = Encoding.UTF8.GetBytes(json);
-
-                    await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
-
-                    var completedTask = await Task.WhenAny(tx.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
-                    if (completedTask != tx.Task)
-                        await completedTask;
+                        var completedTask = await Task.WhenAny(tx.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
+                        if (completedTask != tx.Task)
+                            await completedTask;
+                    }
+                    finally
+                    {
+                        delayCts.Cancel();
+                    }
                 }
-                finally
-                {
-                    delayCts.Cancel();
-                    Mapper.TryRemove(id, out _);
-                }
+
+                var responseRaw = await tx.Task;
+                var response = responseRaw.Deserialize<TResponse>(JsonProtocolSerialization.Settings);
+                if (response == null)
+                    throw new ArgumentException("Failed to parse protocol response.");
+                return response;
             }
-            
-            var responseRaw = await tx.Task;
-            var response = responseRaw.Deserialize<TResponse>(JsonProtocolSerialization.Settings);
-            if (response == null)
-                throw new ArgumentException("Failed to parse protocol response.");
-            return response;
+            finally
+            {
+                Mapper.TryRemove(id, out _);
+            }
         }
 
         private async Task SendOneshotAsync<TResponse>(
@@ -377,13 +406,17 @@ namespace NoDriver.Core
                         throw new JsonException("ProtocolEvent is null or invalid.");
 
                     var eventName = @event.Method;
-                    if (Handlers.TryGetValue(eventName, out var wrappers))
+                    if (Handlers.TryGetValue(eventName, out var list))
                     {
-                        foreach (var wrapper in wrappers)
+                        var tasks = list.ToList()
+                            .Select(it => it.HandleAsync(@event))
+                            .ToList();
+
+                        foreach (var task in tasks)
                         {
                             try
                             {
-                                await wrapper.HandleAsync(@event);
+                                await task;
                             }
                             catch (Exception ex)
                             {
