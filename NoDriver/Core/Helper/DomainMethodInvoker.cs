@@ -4,7 +4,7 @@ using System.Reflection;
 
 namespace NoDriver.Core.Helper
 {
-    public static class DomainMethodInvoker
+    internal static class DomainMethodInvoker
     {
         private static readonly ConcurrentDictionary<string, Func<object>> _invokerCache = new();
 

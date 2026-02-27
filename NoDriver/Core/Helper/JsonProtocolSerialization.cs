@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace NoDriver.Core.Helper
 {
-    public static class JsonProtocolSerialization
+    internal static class JsonProtocolSerialization
     {
         public static readonly JsonSerializerOptions Settings = new JsonSerializerOptions
         {

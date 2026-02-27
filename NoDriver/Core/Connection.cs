@@ -256,10 +256,10 @@ namespace NoDriver.Core
             }
         }
 
-        private async Task SendOneshotAsync<TResponse>(
+        protected async Task<TResponse> SendOneshotAsync<TResponse>(
             ICommand<TResponse> command, CancellationToken token = default) where TResponse : IType
         {
-            await SendAsync(command, true, token);
+            return await SendAsync(command, true, token);
         }
 
         private async Task ListenLoopAsync(CancellationToken token)
