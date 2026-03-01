@@ -3,6 +3,8 @@ using NoDriver.Core.Interface;
 using NoDriver.Core.Message;
 using System.Diagnostics;
 using System.Drawing;
+using static NoDriver.Cdp.DOM;
+using static NoDriver.Cdp.Target;
 
 namespace NoDriver.Core
 {
@@ -214,18 +216,18 @@ namespace NoDriver.Core
             }
         }
 
-        public async Task<List<Element>> QuerySelectorAllAsync(string selector, Cdp.DOM.Node _node = null)
+        public async Task<List<Element>> QuerySelectorAllAsync(string selector, Cdp.DOM.Node node = null)
         {
             var doc = null as Cdp.DOM.Node;
-            if (_node == null)
+            if (node == null)
             {
                 doc = await SendAsync(Cdp.DOM.GetDocument(-1, true));
             }
             else
             {
-                doc = _node;
-                if (_node.NodeName == "IFRAME")
-                    doc = _node.ContentDocument;
+                doc = node;
+                if (node.NodeName == "IFRAME")
+                    doc = node.ContentDocument;
             }
 
             var nodeIds = new List<int>();
@@ -239,18 +241,18 @@ namespace NoDriver.Core
             //catch (Exception e) when (e.Message.Contains("could not find node", StringComparison.OrdinalIgnoreCase))
             catch(ProtocolErrorException ex)
             {
-                if (_node != null)
+                if (node != null)
                 {
                     if (ex.Message.ToLowerInvariant().Contains("could not find node"))
                     {
-                        if (_node.GetMetadata("__last") != null)
+                        if (node.GetMetadata("__last") != null)
                         {
-                            _node.RemoveMetadata("__last");
+                            node.RemoveMetadata("__last");
                             return new List<Element>();
                         }
-                        await _node.UpdateAsync();
-                        _node.SetMetadata("__last", true);
-                        return await QuerySelectorAllAsync(selector, _node);
+                        await node.UpdateAsync();
+                        node.SetMetadata("__last", true);
+                        return await QuerySelectorAllAsync(selector, node);
                     }
                 }
                 else
@@ -266,10 +268,10 @@ namespace NoDriver.Core
             var items = new List<Element>();
             foreach (var nid in nodeIds)
             {
-                var node = Util.FilterRecurse(doc, n => n.NodeId == nid);
-                if (node == null) 
+                var _node = Util.FilterRecurse(doc, n => n.NodeId == nid);
+                if (_node == null) 
                     continue;
-                items.Add(Element.Create(node, this, doc));
+                items.Add(Element.Create(_node, this, doc));
             }
             return items;
         }
@@ -718,7 +720,7 @@ namespace NoDriver.Core
                 Directory.CreateDirectory(parentDir);
 
             var dataBytes = Convert.FromBase64String(base64Data);
-            File.WriteAllBytes(path, dataBytes);
+            await File.WriteAllBytesAsync(path, dataBytes);
             return path;
         }
 
@@ -1098,6 +1100,39 @@ namespace NoDriver.Core
                 .Replace("\n", "");
 
             await SendAsync(Cdp.Runtime.Evaluate(script, awaitPromise: true, userGesture: true));
+        }
+
+        public bool Equals(Tab? other)
+        {
+            if (other == null)
+                return false;
+            if (other.Target == null || Target == null)
+                return false;
+            return other.Target == Target;
+        }
+
+        public override bool Equals(object? obj) => Equals(obj as Tab);
+
+        public override int GetHashCode() => Target?.GetHashCode() ?? 0;
+
+        public static bool operator ==(Tab? left, Tab? right)
+        {
+            if (left is null)
+                return right is null;
+            return left.Equals(right);
+        }
+
+        public static bool operator !=(Tab? left, Tab? right) => !(left == right);
+
+        public override string ToString()
+        {
+            var extra = "";
+            if (!string.IsNullOrWhiteSpace(Target?.Url))
+                extra = $"[url: {Target.Url}]";
+
+            var type = Target?.Type ?? "";
+
+            return $"<{GetType().Name} [{TargetId}] [{type}] {extra}>";
         }
     }
 }
