@@ -128,7 +128,7 @@ namespace Generator
                 var csharpType = GetCSharpType(type.Kind, null, null, domainName);
                 sb.AppendLine($"{indent}[JsonConverter(typeof(Core.PrimitiveTypeConverter))]");
                 sb.AppendLine($"{indent}public record {typeName}(");
-                sb.AppendLine($"{indent}    {csharpType} value");
+                sb.AppendLine($"{indent}    {csharpType} Value");
                 sb.AppendLine($"{indent}) : Core.PrimitiveType<{csharpType}>(value)");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
@@ -345,7 +345,6 @@ namespace Generator
             {
                 if (string.IsNullOrEmpty(@ref))
                     return "JsonObject";
-                
             }
             if (type == TypeKind.Any)
             {

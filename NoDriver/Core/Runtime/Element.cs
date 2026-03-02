@@ -25,27 +25,27 @@ namespace NoDriver.Core.Runtime
         public string NodeValue => _node.NodeValue;
         public NodeId? ParentId => _node.ParentId;
         public int? ChildNodeCount => _node.ChildNodeCount;
-        public List<string> Attributes => _node.Attributes;
-        public string DocumentUrl => _node.DocumentUrl;
-        public string BaseUrl => _node.BaseUrl;
-        public string PublicId => _node.PublicId;
-        public string SystemId => _node.SystemId;
-        public string InternalSubset => _node.InternalSubset;
-        public string XmlVersion => _node.XmlVersion;
-        public string Value => _node.Value;
-        public PseudoType PseudoType => _node.PseudoType;
-        public string PseudoIdentifier => _node.PseudoIdentifier;
-        public ShadowRootType ShadowRootType => _node.ShadowRootType;
-        public string FrameId => _node.FrameId;
-        public Node ContentDocument => _node.ContentDocument;
-        public List<Node> ShadowRoots => _node.ShadowRoots;
-        public Node TemplateContent => _node.TemplateContent;
-        public List<Node> PseudoElements => _node.PseudoElements;
-        public Node ImportedDocument => _node.ImportedDocument;
-        public List<BackendNode> DistributedNodes => _node.DistributedNodes;
-        public bool? IsSvg => _node.IsSvg;
-        public CompatibilityMode CompatibilityMode => _node.CompatibilityMode;
-        public BackendNode AssignedSlot => _node.AssignedSlot;
+        public IReadOnlyList<string>? Attributes => _node.Attributes;
+        public string? DocumentUrl => _node.DocumentURL;
+        public string? BaseUrl => _node.BaseURL;
+        public string? PublicId => _node.PublicId;
+        public string? SystemId => _node.SystemId;
+        public string? InternalSubset => _node.InternalSubset;
+        public string? XmlVersion => _node.XmlVersion;
+        public string? Value => _node.Value;
+        public PseudoType? PseudoType => _node.PseudoType;
+        public string? PseudoIdentifier => _node.PseudoIdentifier;
+        public ShadowRootType? ShadowRootType => _node.ShadowRootType;
+        public string? FrameId => _node.FrameId?.Value;
+        public Node? ContentDocument => _node.ContentDocument;
+        public IReadOnlyList<Node>? ShadowRoots => _node.ShadowRoots;
+        public Node? TemplateContent => _node.TemplateContent;
+        public IReadOnlyList<Node>? PseudoElements => _node.PseudoElements;
+        public Node? ImportedDocument => _node.ImportedDocument;
+        public IReadOnlyList<BackendNode>? DistributedNodes => _node.DistributedNodes;
+        public bool? IsSvg => _node.IsSVG;
+        public CompatibilityMode? CompatibilityMode => _node.CompatibilityMode;
+        public BackendNode? AssignedSlot => _node.AssignedSlot;
         public Tab Tab => _tab;
         public List<Element> ShadowChildren
         {
@@ -68,7 +68,7 @@ namespace NoDriver.Core.Runtime
             get => _tree;
             set => _tree = value;
         }
-        public Dictionary<string, string> Attrs => _attrs;
+        public ConcurrentDictionary<string, string> Attrs => _attrs;
         public Element Parent
         {
             get
@@ -119,8 +119,8 @@ namespace NoDriver.Core.Runtime
                 return children;
             }
         }
-        public RemoteObject RemoteObject => _remoteObject;
-        public RemoteObjectId ObjectScsid => RemoteObject?.ObjectId;
+        public RemoteObject? RemoteObject => _remoteObject;
+        public RemoteObjectId? ObjectScsid => RemoteObject?.ObjectId;
         public string Text
         {
             get
