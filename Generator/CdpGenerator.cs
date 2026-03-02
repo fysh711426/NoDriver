@@ -124,31 +124,30 @@ namespace Generator
             if (type.Kind != TypeKind.Object && type.Kind != TypeKind.Array)
             {
                 var csharpType = GetCSharpType(type.Kind, null, null, domainName);
-                sb.AppendLine($"{indent}[JsonConverter(typeof(PrimitiveTypeConverter))]");
+                sb.AppendLine($"{indent}[JsonConverter(typeof(Core.PrimitiveTypeConverter))]");
                 sb.AppendLine($"{indent}public record {typeName}(");
                 sb.AppendLine($"{indent}    {csharpType} value");
-                sb.AppendLine($"{indent}) : PrimitiveType<{csharpType}>(value)");
+                sb.AppendLine($"{indent}) : Core.PrimitiveType<{csharpType}>(value)");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
             }
             // 型別是陣列 Array
             else if (type.Kind == TypeKind.Array)
             {
-                var csharpType = GetCSharpType(type.Kind, null, type.Items, domainName);
-                sb.AppendLine($"{indent}[System.Text.Json.Serialization.JsonConverter(typeof(ChromeProtocol.Core.ArrayTypeConverter))]");
+                sb.AppendLine($"{indent}[JsonConverter(typeof(Core.ArrayTypeConverter))]");
                 sb.AppendLine($"{indent}public record {typeName}(");
-                sb.AppendLine($"{indent}    IReadOnlyCollection<{csharpType}> items");
-                sb.AppendLine($"{indent})");
+                sb.AppendLine($"{indent}    IReadOnlyCollection<JsonNode> Items");
+                sb.AppendLine($"{indent}) : Core.IArrayType");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
             }
             // 型別是 Object，但沒有定義任何屬性
             else if (type.Kind == TypeKind.Object && type.Properties.Count == 0)
             {
-                sb.AppendLine($"{indent}[System.Text.Json.Serialization.JsonConverter(typeof(ChromeProtocol.Core.ObjectTypeConverter))]");
+                sb.AppendLine($"{indent}[JsonConverter(typeof(Core.ObjectTypeConverter))]");
                 sb.AppendLine($"{indent}public record {typeName}(");
-                sb.AppendLine($"{indent}    IReadOnlyDictionary<string, JsonNode?> properties");
-                sb.AppendLine($"{indent})");
+                sb.AppendLine($"{indent}    IReadOnlyDictionary<string, JsonNode?> Properties");
+                sb.AppendLine($"{indent}) : Core.IObjectType");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
             }
@@ -157,7 +156,7 @@ namespace Generator
             {
                 sb.AppendLine($"{indent}public record {typeName}(");
                 GenerateParameters(sb, type.Properties, domainName, indentLevel + 1);
-                sb.AppendLine($"{indent})");
+                sb.AppendLine($"{indent}) : Core.IType");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
             }
@@ -215,7 +214,7 @@ namespace Generator
                 sb.AppendLine($"{indent}[Core.MethodName(\"{domainName}.{ToFirstLower(command.Name)}\")]");
                 sb.Append($"{indent}public record {reqName}({newLine}");
                 GenerateParameters(sb, command.Parameters, domainName, indentLevel + 1);
-                sb.AppendLine($"{(newLine == "" ? "" : indent)})");
+                sb.AppendLine($"{(newLine == "" ? "" : indent)}) : Core.ICommand<{resName}>");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
             }
@@ -233,7 +232,7 @@ namespace Generator
 
                 sb.Append($"{indent}public record {resName}({newLine}");
                 GenerateParameters(sb, command.Returns, domainName, indentLevel + 1);
-                sb.AppendLine($"{(newLine == "" ? "" : indent)})");
+                sb.AppendLine($"{(newLine == "" ? "" : indent)}) : Core.IType");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
             }
@@ -253,7 +252,7 @@ namespace Generator
             sb.AppendLine($"{indent}[Core.MethodName(\"{domainName}.{ToFirstLower(@event.Name)}\")]");
             sb.AppendLine($"{indent}public record {eventName}(");
             GenerateParameters(sb, @event.Parameters, domainName, indentLevel + 1);
-            sb.AppendLine($"{indent})");
+            sb.AppendLine($"{indent}) : Core.IEvent");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}}}");
         }
