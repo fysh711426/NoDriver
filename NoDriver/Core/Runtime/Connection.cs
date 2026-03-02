@@ -1,6 +1,4 @@
-﻿using NoDriver.Core.Helper;
-using NoDriver.Core.Interface;
-using NoDriver.Core.Message;
+﻿using NoDriver.Core.Tools;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Reflection;
@@ -8,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace NoDriver.Core
+namespace NoDriver.Core.Runtime
 {
     public class Connection : IDisposable, IAsyncDisposable
     {

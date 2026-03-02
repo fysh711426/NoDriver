@@ -212,7 +212,7 @@ namespace Generator
                 if (command.Parameters.Count > 0)
                     newLine = Environment.NewLine;
 
-                sb.AppendLine($"{indent}[MethodName(\"{domainName}.{command.Name}\")]");
+                sb.AppendLine($"{indent}[Core.MethodName(\"{domainName}.{ToFirstLower(command.Name)}\")]");
                 sb.Append($"{indent}public record {reqName}({newLine}");
                 GenerateParameters(sb, command.Parameters, domainName, indentLevel + 1);
                 sb.AppendLine($"{(newLine == "" ? "" : indent)})");
@@ -250,7 +250,7 @@ namespace Generator
             if (@event.Deprecated == true)
                 sb.AppendLine($"{indent}[Obsolete]");
 
-            sb.AppendLine($"{indent}[MethodName(\"{domainName}.{eventName}\")]");
+            sb.AppendLine($"{indent}[Core.MethodName(\"{domainName}.{ToFirstLower(@event.Name)}\")]");
             sb.AppendLine($"{indent}public record {eventName}(");
             GenerateParameters(sb, @event.Parameters, domainName, indentLevel + 1);
             sb.AppendLine($"{indent})");
@@ -267,7 +267,7 @@ namespace Generator
             var index = 0;
             foreach (var param in parameters)
             {
-                var paramName = EscapeKeyword(ToFirstLower(param.Name));
+                var paramName = EscapeKeyword(ToFirstUpper(param.Name));
 
                 var csharpType = GetCSharpType(param.Type, param.Ref, param.Items, domainName);
 
@@ -302,7 +302,7 @@ namespace Generator
             {
                 if (!string.IsNullOrWhiteSpace(param.Description))
                 {
-                    var paramName = ToFirstLower(param.Name);
+                    var paramName = ToFirstUpper(param.Name);
 
                     var safeDesc = SecurityElement.Escape(param.Description.Trim())
                         .Replace("\r\n", "\n")

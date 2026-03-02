@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace NoDriver.Core
+namespace NoDriver.Core.Tools
 {
     internal class ChromeExecutable
     {

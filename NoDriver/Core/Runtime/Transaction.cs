@@ -1,8 +1,8 @@
-﻿using NoDriver.Core.Message;
+﻿using NoDriver.Core.Messaging;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace NoDriver.Core
+namespace NoDriver.Core.Runtime
 {
     public class Transaction<TRawParams>
     {

@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace NoDriver.Core.Helper
+namespace NoDriver.Core.Tools
 {
     internal class PlatformHelper
     {

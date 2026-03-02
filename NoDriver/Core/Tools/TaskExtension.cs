@@ -1,4 +1,4 @@
-﻿namespace NoDriver.Core.Helper
+﻿namespace NoDriver.Core.Tools
 {
     internal static class TaskExtension
     {

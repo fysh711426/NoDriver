@@ -1,8 +1,7 @@
-﻿using NoDriver.Core.Helper;
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO.Compression;
 
-namespace NoDriver.Core
+namespace NoDriver.Core.Runtime
 {
     public class Config
     {

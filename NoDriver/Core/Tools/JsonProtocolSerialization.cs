@@ -1,7 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace NoDriver.Core.Helper
+namespace NoDriver.Core.Tools
 {
     internal static class JsonProtocolSerialization
     {

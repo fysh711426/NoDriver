@@ -1,8 +1,8 @@
-﻿using NoDriver.Core.Interface;
-using NoDriver.Core.Message;
+﻿using NoDriver.Core.Messaging;
+using NoDriver.Core.Tools;
 using System.Text.Json;
 
-namespace NoDriver.Core.Helper
+namespace NoDriver.Core
 {
     public delegate void SyncDomainEventHandler<in TEvent>(TEvent @event) where TEvent : IEvent;
 

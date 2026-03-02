@@ -1,17 +1,14 @@
 ﻿using NoDriver.Cdp;
-using NoDriver.Core.Interface;
-using NoDriver.Core.Message;
 using System.Diagnostics;
 using System.Drawing;
 using static NoDriver.Cdp.DOM;
-using static NoDriver.Cdp.Target;
 
-namespace NoDriver.Core
+namespace NoDriver.Core.Runtime
 {
     public class Tab : Connection
     {
         private int? _windowId = null;
-        private Cdp.DOM.Node? _dom = null;
+        private Node? _dom = null;
         private List<string> _downloadBehavior = new();
 
         private bool _prepHeadlessDone = false;
@@ -54,7 +51,7 @@ namespace NoDriver.Core
             if (response?.Value != null)
             {
                 string ua = response.Value.ToString();
-                await SendOneshotAsync(Cdp.Network.SetUserAgentOverride(ua.Replace("Headless", "")), token);
+                await SendOneshotAsync(Network.SetUserAgentOverride(ua.Replace("Headless", "")), token);
             }
             _prepHeadlessDone = true;
         }
@@ -66,8 +63,8 @@ namespace NoDriver.Core
 
             if (Browser != null)
             {
-                await SendOneshotAsync(Cdp.Page.Enable(), token);
-                await SendOneshotAsync(Cdp.Page.AddScriptToEvaluateOnNewDocument(@"
+                await SendOneshotAsync(Page.Enable(), token);
+                await SendOneshotAsync(Page.AddScriptToEvaluateOnNewDocument(@"
                     console.log('hooking attachShadow');
                     Element.prototype._attachShadow = Element.prototype.attachShadow;
                     Element.prototype.attachShadow = function () {
@@ -171,7 +168,7 @@ namespace NoDriver.Core
             var items = new List<Element>();
             try
             {
-                await SendAsync(Cdp.DOM.Enable(), true);
+                await SendAsync(Enable(), true);
                 items = await FindAllAsync(xpath, timeout: 0);
                 if (items.Count == 0)
                 {
@@ -189,7 +186,7 @@ namespace NoDriver.Core
             {
                 try
                 {
-                    await SendAsync(Cdp.DOM.Disable(), true);
+                    await SendAsync(Disable(), true);
                 }
                 catch (ProtocolErrorException) { }
             }
@@ -210,18 +207,18 @@ namespace NoDriver.Core
             }
             else
             {
-                var result = await SendAsync(Cdp.Page.Navigate(url));
+                var result = await SendAsync(Page.Navigate(url));
                 await WaitAsync();
                 return this;
             }
         }
 
-        public async Task<List<Element>> QuerySelectorAllAsync(string selector, Cdp.DOM.Node node = null)
+        public async Task<List<Element>> QuerySelectorAllAsync(string selector, Node node = null)
         {
-            var doc = null as Cdp.DOM.Node;
+            var doc = null as Node;
             if (node == null)
             {
-                doc = await SendAsync(Cdp.DOM.GetDocument(-1, true));
+                doc = await SendAsync(GetDocument(-1, true));
             }
             else
             {
@@ -233,7 +230,7 @@ namespace NoDriver.Core
             var nodeIds = new List<int>();
             try
             {
-                nodeIds = await SendAsync(Cdp.DOM.QuerySelectorAll(doc.NodeId, selector));
+                nodeIds = await SendAsync(QuerySelectorAll(doc.NodeId, selector));
             }
             //except AttributeError:
             //# has no content_document
@@ -257,7 +254,7 @@ namespace NoDriver.Core
                 }
                 else
                 {
-                    await SendAsync(Cdp.DOM.Disable());
+                    await SendAsync(Disable());
                     throw;
                 }
             }
@@ -276,14 +273,14 @@ namespace NoDriver.Core
             return items;
         }
 
-        public async Task<Element> QuerySelectorAsync(string selector, Cdp.DOM.Node _node = null)
+        public async Task<Element> QuerySelectorAsync(string selector, Node _node = null)
         {
             selector = selector.Trim();
 
-            var doc = null as Cdp.DOM.Node;
+            var doc = null as Node;
             if (_node == null)
             {
-                doc = await SendAsync(Cdp.DOM.GetDocument(-1, true));
+                doc = await SendAsync(GetDocument(-1, true));
             }
             else
             {
@@ -295,7 +292,7 @@ namespace NoDriver.Core
             int? nodeId = null;
             try
             {
-                nodeId = await SendAsync(Cdp.DOM.QuerySelector(doc.NodeId, selector));
+                nodeId = await SendAsync(QuerySelector(doc.NodeId, selector));
             }
             catch (ProtocolErrorException ex)
             {
@@ -315,7 +312,7 @@ namespace NoDriver.Core
                 }
                 else
                 {
-                    await SendAsync(Cdp.DOM.Disable());
+                    await SendAsync(Disable());
                     throw;
                 }
             }
@@ -332,16 +329,16 @@ namespace NoDriver.Core
         public async Task<List<Element>> FindElementsByTextAsync(string text, string? tagHint = null)
         {
             text = text.Trim();
-            var doc = await SendAsync(Cdp.DOM.GetDocument(-1, true));
-            var searchResult = await SendAsync(Cdp.DOM.PerformSearch(text, true));
+            var doc = await SendAsync(GetDocument(-1, true));
+            var searchResult = await SendAsync(PerformSearch(text, true));
             var searchId = searchResult.SearchId;
             var nresult = searchResult.ResultCount;
 
             var nodeIds = new List<int>();
             if (nresult > 0)
-                nodeIds = await SendAsync(Cdp.DOM.GetSearchResults(searchId, 0, nresult));
+                nodeIds = await SendAsync(DOM.GetSearchResults(searchId, 0, nresult));
 
-            await SendAsync(Cdp.DOM.DiscardSearchResults(searchId));
+            await SendAsync(DOM.DiscardSearchResults(searchId));
 
             var items = new List<Element>();
             foreach (var nid in nodeIds)
@@ -349,7 +346,7 @@ namespace NoDriver.Core
                 var node = Util.FilterRecurse(doc, n => n.NodeId == nid);
                 if (node == null)
                 {
-                    node = await SendAsync(Cdp.DOM.ResolveNode(nodeId: nid));
+                    node = await SendAsync(DOM.ResolveNode(nodeId: nid));
                     if (node == null)
                         continue;
                 }
@@ -392,7 +389,7 @@ namespace NoDriver.Core
                 }
             }
 
-            await SendAsync(Cdp.DOM.Disable());
+            await SendAsync(Disable());
             return items;
         }
 
@@ -425,7 +422,7 @@ namespace NoDriver.Core
 
         public async Task ReloadAsync(bool ignoreCache = true, string? scriptToEvaluateOnLoad = null)
         {
-            await SendAsync(Cdp.Page.Reload(ignoreCache, scriptToEvaluateOnLoad));
+            await SendAsync(Page.Reload(ignoreCache, scriptToEvaluateOnLoad));
         }
 
         public async Task<(Cdp.Runtime.RemoteObject, Cdp.Runtime.ExceptionDetails)> EvaluateAsync(string expression, bool awaitPromise = false, bool returnByValue = false)
@@ -498,8 +495,8 @@ namespace NoDriver.Core
 
         public async Task<string> GetContentAsync()
         {
-            Cdp.DOM.Node doc = await SendAsync(Cdp.DOM.GetDocument(-1, true));
-            return await SendAsync(Cdp.DOM.GetOuterHtml(doc.BackendNodeId));
+            Node doc = await SendAsync(GetDocument(-1, true));
+            return await SendAsync(DOM.GetOuterHtml(doc.BackendNodeId));
         }
 
         public Task MaximizeAsync()
@@ -576,7 +573,7 @@ namespace NoDriver.Core
         public async Task ScrollDownAsync(int amount = 25)
         {
             var (_, bounds) = await GetWindowAsync();
-            await SendAsync(Cdp.Input.SynthesizeScrollGesture(
+            await SendAsync(Input.SynthesizeScrollGesture(
                 0, 0, 
                 xDistance: -(bounds.Height * (amount / 100.0)),
                 yOverscroll:0,
@@ -589,9 +586,9 @@ namespace NoDriver.Core
         public async Task ScrollUpAsync(int amount = 25)
         {
             var (_, bounds) = await GetWindowAsync();
-            await SendAsync(Cdp.Input.SynthesizeScrollGesture(
+            await SendAsync(Input.SynthesizeScrollGesture(
                 0, 0, 
-                yDistance: (bounds.Height * (amount / 100.0)),
+                yDistance: bounds.Height * (amount / 100.0),
                 xOverscroll: 0, 
                 preventFling: true,
                 repeatDelayMs: 0,
@@ -711,7 +708,7 @@ namespace NoDriver.Core
             if (string.IsNullOrWhiteSpace(path))
                 throw new Exception($"Invalid filename or path: '{filename}'");
 
-            var base64Data = await SendAsync(Cdp.Page.CaptureScreenshot(format, fullPage));
+            var base64Data = await SendAsync(Page.CaptureScreenshot(format, fullPage));
             if (string.IsNullOrWhiteSpace(base64Data)) 
                 throw new ProtocolErrorException("Could not take screenshot. most possible cause is the page has not finished loading yet.");
 
@@ -790,12 +787,12 @@ namespace NoDriver.Core
 
             var origin = new Uri(Target.Url).GetLeftPart(UriPartial.Authority);
 
-            var storageId = new Cdp.DOMStorage.StorageId 
+            var storageId = new DOMStorage.StorageId 
             { 
                 IsLocalStorage = true, 
                 SecurityOrigin = origin 
             };
-            var items = await SendAsync(Cdp.DOMStorage.GetDOMStorageItems(storageId));
+            var items = await SendAsync(DOMStorage.GetDOMStorageItems(storageId));
 
             var retval = new Dictionary<string, string>();
             foreach (var item in items)
@@ -817,14 +814,14 @@ namespace NoDriver.Core
 
             var origin = new Uri(Target.Url).GetLeftPart(UriPartial.Authority);
 
-            var storageId = new Cdp.DOMStorage.StorageId
+            var storageId = new DOMStorage.StorageId
             {
                 SecurityOrigin = origin,
                 IsLocalStorage = true
             };
 
             var tasks = items.Select(kvp =>
-                SendAsync(Cdp.DOMStorage.SetDOMStorageItem(
+                SendAsync(DOMStorage.SetDOMStorageItem(
                     storageId,
                     kvp.Key,
                     kvp.Value
@@ -833,14 +830,14 @@ namespace NoDriver.Core
             await Task.WhenAll(tasks);
         }
 
-        public async Task<Cdp.Page.FrameTree> GetFrameTreeAsync()
+        public async Task<Page.FrameTree> GetFrameTreeAsync()
         {
-            return await SendAsync(Cdp.Page.GetFrameTree());
+            return await SendAsync(Page.GetFrameTree());
         }
 
-        public async Task<Cdp.Page.FrameResourceTree> GetFrameResourceTreeAsync()
+        public async Task<Page.FrameResourceTree> GetFrameResourceTreeAsync()
         {
-            return await SendAsync(Cdp.Page.GetResourceTree());
+            return await SendAsync(Page.GetResourceTree());
         }
 
         public async Task<List<string>> GetFrameResourceUrlsAsync()
@@ -869,7 +866,7 @@ namespace NoDriver.Core
         {
             try
             {
-                await SendOneshotAsync(Cdp.Page.Enable());
+                await SendOneshotAsync(Page.Enable());
 
                 var tree = await GetFrameResourceTreeAsync();
                 var listOfTuples = Util.FlattenFrameTreeResources(tree);
@@ -883,7 +880,7 @@ namespace NoDriver.Core
                     if (frame == null || resource == null) 
                         continue;
 
-                    var res = await SendAsync(Cdp.Page.SearchInResource(frame.Id, resource.Url, query));
+                    var res = await SendAsync(Page.SearchInResource(frame.Id, resource.Url, query));
                     if (res != null && res.Count > 0)
                     {
                         results[resource.Url] = res;
@@ -893,7 +890,7 @@ namespace NoDriver.Core
             }
             finally
             {
-                await SendOneshotAsync(Cdp.Page.Disable());
+                await SendOneshotAsync(Page.Disable());
             }
         }
 
@@ -949,8 +946,8 @@ namespace NoDriver.Core
 
                 int tmpW = templateGray.Width;
                 int tmpH = templateGray.Height;
-                int cx = maxL.X + (tmpW / 2);
-                int cy = maxL.Y + (tmpH / 2);
+                int cx = maxL.X + tmpW / 2;
+                int cy = maxL.Y + tmpH / 2;
 
                 return (cx, cy);
             }
@@ -990,12 +987,12 @@ namespace NoDriver.Core
                     var currentY = stepSizeY * i;
                     if (flash) 
                         await FlashPointAsync(currentX, currentY);
-                    await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", currentX, currentY));
+                    await SendAsync(Input.DispatchMouseEvent("mouseMoved", currentX, currentY));
                 }
             }
             else
             {
-                await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", x, y));
+                await SendAsync(Input.DispatchMouseEvent("mouseMoved", x, y));
             }
 
             if (flash) 
@@ -1003,7 +1000,7 @@ namespace NoDriver.Core
             else 
                 await SleepAsync(0.05);
 
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", x, y));
+            await SendAsync(Input.DispatchMouseEvent("mouseReleased", x, y));
             if (flash) 
                 await FlashPointAsync(x, y);
         }
@@ -1026,10 +1023,10 @@ namespace NoDriver.Core
 
         public async Task MouseClickAsync(double x, double y, string button = "left", int buttons = 1, int modifiers = 0)
         {
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed", x, y,
-                modifiers: modifiers, button: new Cdp.Input.MouseButton(button), buttons: buttons, clickCount: 1));
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", x, y,
-                modifiers: modifiers, button: new Cdp.Input.MouseButton(button), buttons: buttons, clickCount: 1));
+            await SendAsync(Input.DispatchMouseEvent("mousePressed", x, y,
+                modifiers: modifiers, button: new Input.MouseButton(button), buttons: buttons, clickCount: 1));
+            await SendAsync(Input.DispatchMouseEvent("mouseReleased", x, y,
+                modifiers: modifiers, button: new Input.MouseButton(button), buttons: buttons, clickCount: 1));
         }
 
         public async Task MouseDragAsync((double X, double Y) sourcePoint, (double X, double Y) destPoint, bool relative = false, int steps = 1)
@@ -1037,13 +1034,13 @@ namespace NoDriver.Core
             if (relative) 
                 destPoint = (sourcePoint.X + destPoint.X, sourcePoint.Y + destPoint.Y);
 
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed", 
-                sourcePoint.X, sourcePoint.Y, new Cdp.Input.MouseButton("left")));
+            await SendAsync(Input.DispatchMouseEvent("mousePressed", 
+                sourcePoint.X, sourcePoint.Y, new Input.MouseButton("left")));
 
             steps = steps < 1 ? 1 : steps;
             if (steps == 1)
             {
-                await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", destPoint.X, destPoint.Y));
+                await SendAsync(Input.DispatchMouseEvent("mouseMoved", destPoint.X, destPoint.Y));
             }
             else
             {
@@ -1051,13 +1048,13 @@ namespace NoDriver.Core
                 var stepSizeY = (destPoint.Y - sourcePoint.Y) / steps;
                 for (var i = 0; i <= steps; i++)
                 {
-                    await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", 
+                    await SendAsync(Input.DispatchMouseEvent("mouseMoved", 
                         sourcePoint.X + stepSizeX * i, sourcePoint.Y + stepSizeY * i));
                     await Task.Yield();
                 }
             }
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", 
-                destPoint.X, destPoint.Y, new Cdp.Input.MouseButton("left")));
+            await SendAsync(Input.DispatchMouseEvent("mouseReleased", 
+                destPoint.X, destPoint.Y, new Input.MouseButton("left")));
         }
 
         public async Task FlashPointAsync(double x, double y, double duration = 0.5, int size = 10)

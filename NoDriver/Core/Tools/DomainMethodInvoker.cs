@@ -2,7 +2,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 
-namespace NoDriver.Core.Helper
+namespace NoDriver.Core.Tools
 {
     internal static class DomainMethodInvoker
     {

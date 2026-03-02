@@ -1,4 +1,4 @@
-﻿namespace NoDriver.Core.Interface
+﻿namespace NoDriver.Core
 {
     public interface ICommand;
 

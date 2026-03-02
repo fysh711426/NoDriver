@@ -1,4 +1,4 @@
-﻿namespace NoDriver.Core
+﻿namespace NoDriver.Core.Runtime
 {
     public record Position : Cdp.DOM.Quad
     {
@@ -15,7 +15,7 @@
         public double Width => Right - Left;
         public double Height => Bottom - Top;
        
-        public (double X, double Y) Center => (Left + (Width / 2.0), Top + (Height / 2.0));
+        public (double X, double Y) Center => (Left + Width / 2.0, Top + Height / 2.0);
 
         public Position(List<double> points) :
             base(points)

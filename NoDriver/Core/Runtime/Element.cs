@@ -1,29 +1,28 @@
-﻿using NoDriver.Core.Message;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using static NoDriver.Cdp.DOM;
 using static NoDriver.Cdp.Runtime;
 
-namespace NoDriver.Core
+namespace NoDriver.Core.Runtime
 {
     public class Element
     {
         private Tab _tab;
-        private Cdp.DOM.Node _node;
-        private Cdp.DOM.Node? _tree;
+        private Node _node;
+        private Node? _tree;
         private Element? _parent = null;
-        private Cdp.Runtime.RemoteObject? _remoteObject = null;
+        private RemoteObject? _remoteObject = null;
         private ConcurrentDictionary<string, string> _attrs = new(StringComparer.OrdinalIgnoreCase);
 
         public string Tag => NodeName.ToLowerInvariant();
         public string TagName => Tag;
-        public Cdp.DOM.NodeId NodeId => _node.NodeId;
-        public Cdp.DOM.BackendNodeId BackendNodeId => _node.BackendNodeId;
+        public NodeId NodeId => _node.NodeId;
+        public BackendNodeId BackendNodeId => _node.BackendNodeId;
         public int NodeType => _node.NodeType;
         public string NodeName => _node.NodeName;
         public string LocalName => _node.LocalName;
         public string NodeValue => _node.NodeValue;
-        public Cdp.DOM.NodeId? ParentId => _node.ParentId;
+        public NodeId? ParentId => _node.ParentId;
         public int? ChildNodeCount => _node.ChildNodeCount;
         public List<string> Attributes => _node.Attributes;
         public string DocumentUrl => _node.DocumentUrl;
@@ -33,19 +32,19 @@ namespace NoDriver.Core
         public string InternalSubset => _node.InternalSubset;
         public string XmlVersion => _node.XmlVersion;
         public string Value => _node.Value;
-        public Cdp.DOM.PseudoType PseudoType => _node.PseudoType;
+        public PseudoType PseudoType => _node.PseudoType;
         public string PseudoIdentifier => _node.PseudoIdentifier;
-        public Cdp.DOM.ShadowRootType ShadowRootType => _node.ShadowRootType;
+        public ShadowRootType ShadowRootType => _node.ShadowRootType;
         public string FrameId => _node.FrameId;
-        public Cdp.DOM.Node ContentDocument => _node.ContentDocument;
-        public List<Cdp.DOM.Node> ShadowRoots => _node.ShadowRoots;
-        public Cdp.DOM.Node TemplateContent => _node.TemplateContent;
-        public List<Cdp.DOM.Node> PseudoElements => _node.PseudoElements;
-        public Cdp.DOM.Node ImportedDocument => _node.ImportedDocument;
-        public List<Cdp.DOM.BackendNode> DistributedNodes => _node.DistributedNodes;
+        public Node ContentDocument => _node.ContentDocument;
+        public List<Node> ShadowRoots => _node.ShadowRoots;
+        public Node TemplateContent => _node.TemplateContent;
+        public List<Node> PseudoElements => _node.PseudoElements;
+        public Node ImportedDocument => _node.ImportedDocument;
+        public List<BackendNode> DistributedNodes => _node.DistributedNodes;
         public bool? IsSvg => _node.IsSvg;
-        public Cdp.DOM.CompatibilityMode CompatibilityMode => _node.CompatibilityMode;
-        public Cdp.DOM.BackendNode AssignedSlot => _node.AssignedSlot;
+        public CompatibilityMode CompatibilityMode => _node.CompatibilityMode;
+        public BackendNode AssignedSlot => _node.AssignedSlot;
         public Tab Tab => _tab;
         public List<Element> ShadowChildren
         {
@@ -119,8 +118,8 @@ namespace NoDriver.Core
                 return children;
             }
         }
-        public Cdp.Runtime.RemoteObject RemoteObject => _remoteObject;
-        public Cdp.Runtime.RemoteObjectId ObjectScsid => RemoteObject?.ObjectId;
+        public RemoteObject RemoteObject => _remoteObject;
+        public RemoteObjectId ObjectScsid => RemoteObject?.ObjectId;
         public string Text
         {
             get
@@ -138,7 +137,7 @@ namespace NoDriver.Core
             }
         }
 
-        public Element(Cdp.DOM.Node node, Tab tab, Cdp.DOM.Node? tree = null)
+        public Element(Node node, Tab tab, Node? tree = null)
         {
             if (node == null)
                 throw new ArgumentException("Node cannot be null.");
@@ -151,7 +150,7 @@ namespace NoDriver.Core
         public async Task SaveToDomAsync()
         {
             _remoteObject = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId));
-            await _tab.SendAsync(Cdp.DOM.SetOuterHtml(NodeId, this.ToString()));
+            await _tab.SendAsync(Cdp.DOM.SetOuterHtml(NodeId, ToString()));
             await UpdateAsync();
         }
 
@@ -165,9 +164,9 @@ namespace NoDriver.Core
             }
         }
 
-        public async Task<Element> UpdateAsync(Cdp.DOM.Node node = null)
+        public async Task<Element> UpdateAsync(Node node = null)
         {
-            var doc = null as Cdp.DOM.Node;
+            var doc = null as Node;
             if (node != null)
             {
                 doc = node;
@@ -175,7 +174,7 @@ namespace NoDriver.Core
             }
             else
             {
-                doc = await _tab.SendAsync(Cdp.DOM.GetDocument(-1, true));
+                doc = await _tab.SendAsync(GetDocument(-1, true));
                 _parent = null;
             }
 
@@ -205,13 +204,13 @@ namespace NoDriver.Core
         public async Task ClickAsync()
         {
             _remoteObject = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId));
-            var arguments = new List<Cdp.Runtime.CallArgument>
+            var arguments = new List<CallArgument>
             {
-                new Cdp.Runtime.CallArgument { ObjectId = _remoteObject.ObjectId }
+                new CallArgument { ObjectId = _remoteObject.ObjectId }
             };
 
             await FlashAsync(0.25);
-            await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
+            await _tab.SendAsync(CallFunctionOn(
                 "(el) => el.click()",
                 objectId: _remoteObject.ObjectId,
                 arguments: arguments,
@@ -237,12 +236,12 @@ namespace NoDriver.Core
         public async Task<object> ApplyAsync(string jsFunction, bool returnByValue = true)
         {
             _remoteObject = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId));
-            var result = await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
+            var result = await _tab.SendAsync(CallFunctionOn(
                 jsFunction,
                 objectId: _remoteObject.ObjectId,
-                arguments: new List<Cdp.Runtime.CallArgument>
+                arguments: new List<CallArgument>
                 {
-                    new Cdp.Runtime.CallArgument { ObjectId = _remoteObject.ObjectId }
+                    new CallArgument { ObjectId = _remoteObject.ObjectId }
                 },
                 returnByValue: true,
                 userGesture: true
@@ -283,8 +282,8 @@ namespace NoDriver.Core
                     // Assuming Tab.EvaluateAsync returns a convertible type
                     var scrollY = Convert.ToDouble(await _tab.EvaluateAsync("window.scrollY"));
                     var scrollX = Convert.ToDouble(await _tab.EvaluateAsync("window.scrollX"));
-                    pos.AbsX = pos.Left + scrollX + (pos.Width / 2.0);
-                    pos.AbsY = pos.Top + scrollY + (pos.Height / 2.0);
+                    pos.AbsX = pos.Left + scrollX + pos.Width / 2.0;
+                    pos.AbsY = pos.Top + scrollY + pos.Height / 2.0;
                 }
                 return pos;
             }
@@ -420,7 +419,7 @@ namespace NoDriver.Core
 
         public async Task SetValueAsync(string value)
         {
-            await _tab.SendAsync(Cdp.DOM.SetNodeValue(NodeId, value));
+            await _tab.SendAsync(SetNodeValue(NodeId, value));
         }
 
         public async Task SetTextAsync(string value)
@@ -437,7 +436,7 @@ namespace NoDriver.Core
                 throw new InvalidOperationException("Could only set value of text nodes.");
             }
             await UpdateAsync();
-            await _tab.SendAsync(Cdp.DOM.SetNodeValue(NodeId, value));
+            await _tab.SendAsync(SetNodeValue(NodeId, value));
         }
 
         public async Task<string> GetHtmlAsync()
@@ -574,11 +573,11 @@ namespace NoDriver.Core
                 }
                 """;
 
-            var arguments = new List<Cdp.Runtime.CallArgument>
+            var arguments = new List<CallArgument>
             {
-                new Cdp.Runtime.CallArgument { ObjectId = _remoteObject.ObjectId }
+                new CallArgument { ObjectId = _remoteObject.ObjectId }
             };
-            await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
+            await _tab.SendAsync(CallFunctionOn(
                 script,
                 objectId: _remoteObject.ObjectId,
                 arguments: arguments,

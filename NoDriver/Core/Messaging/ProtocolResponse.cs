@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Nodes;
 
-namespace NoDriver.Core.Message
+namespace NoDriver.Core.Messaging
 {
     public class ProtocolResponse
     {
