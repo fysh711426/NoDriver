@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using NoDriver.Core.Messaging;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using static NoDriver.Cdp.DOM;
 using static NoDriver.Cdp.Runtime;
@@ -53,7 +54,7 @@ namespace NoDriver.Core.Runtime
                 if (ShadowRoots != null && ShadowRoots.Count > 0)
                 {
                     var root = ShadowRoots[0];
-                    if (root.ShadowRootType == Cdp.Dom.ShadowRootType.Open)
+                    if (root.ShadowRootType == Cdp.DOM.ShadowRootType.Open)
                     {
                         return root.Children?.Select(child => ElementFactory.Create(child, Tab)).ToList();
                     }
@@ -61,8 +62,8 @@ namespace NoDriver.Core.Runtime
                 return null;
             }
         }
-        public Cdp.Dom.Node Node => _node;
-        public Cdp.Dom.Node Tree
+        public Cdp.DOM.Node Node => _node;
+        public Cdp.DOM.Node Tree
         {
             get => _tree;
             set => _tree = value;

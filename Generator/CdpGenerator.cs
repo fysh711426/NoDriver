@@ -117,8 +117,10 @@ namespace Generator
             var indent = new string(' ', indentLevel * 4);
 
             var typeName = ToFirstUpper(type.Id);
+            if (typeName == domainName)
+                typeName = $"{typeName}Type";
 
-            GenerateDoc(sb, type.Description, type.Properties, indentLevel);
+            GenerateDoc(sb, type.Description, type.Properties, typeName, indentLevel);
 
             // 不是 Object 也不是 Array 的型別，也就是字串、整數、布林值等基本型別
             if (type.Kind != TypeKind.Object && type.Kind != TypeKind.Array)
@@ -155,7 +157,7 @@ namespace Generator
             else
             {
                 sb.AppendLine($"{indent}public record {typeName}(");
-                GenerateParameters(sb, type.Properties, domainName, indentLevel + 1);
+                GenerateParameters(sb, type.Properties, domainName, typeName, indentLevel + 1);
                 sb.AppendLine($"{indent}) : Core.IType");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
@@ -172,7 +174,7 @@ namespace Generator
 
             // static Method
             {
-                GenerateDoc(sb, command.Description, command.Parameters, indentLevel);
+                GenerateDoc(sb, command.Description, command.Parameters, "", indentLevel);
 
                 if (command.Deprecated == true)
                     sb.AppendLine($"{indent}[Obsolete]");
@@ -180,9 +182,11 @@ namespace Generator
                 var methodArgs = new List<string>();
                 var constructorArgs = new List<string>();
 
-                foreach (var param in command.Parameters)
+                var parameters = command.Parameters.OrderBy(p => p.Optional == true).ToList();
+
+                foreach (var param in parameters)
                 {
-                    var paramName = EscapeKeyword(ToFirstLower(param.Name));
+                    var paramName = EscapeKeyword(ToFirstUpper(param.Name));
 
                     var csharpType = GetCSharpType(param.Type, param.Ref, param.Items, domainName);
 
@@ -202,7 +206,7 @@ namespace Generator
 
             // Request record
             {
-                GenerateDoc(sb, command.Description, command.Parameters, indentLevel);
+                GenerateDoc(sb, command.Description, command.Parameters, "", indentLevel);
 
                 if (command.Deprecated == true)
                     sb.AppendLine($"{indent}[Obsolete]");
@@ -213,7 +217,7 @@ namespace Generator
 
                 sb.AppendLine($"{indent}[Core.MethodName(\"{domainName}.{ToFirstLower(command.Name)}\")]");
                 sb.Append($"{indent}public record {reqName}({newLine}");
-                GenerateParameters(sb, command.Parameters, domainName, indentLevel + 1);
+                GenerateParameters(sb, command.Parameters, domainName, "", indentLevel + 1);
                 sb.AppendLine($"{(newLine == "" ? "" : indent)}) : Core.ICommand<{resName}>");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
@@ -221,7 +225,7 @@ namespace Generator
 
             // Result record
             {
-                GenerateDoc(sb, command.Description, command.Returns, indentLevel);
+                GenerateDoc(sb, command.Description, command.Returns, "", indentLevel);
 
                 if (command.Deprecated == true)
                     sb.AppendLine($"{indent}[Obsolete]");
@@ -231,7 +235,7 @@ namespace Generator
                     newLine = Environment.NewLine;
 
                 sb.Append($"{indent}public record {resName}({newLine}");
-                GenerateParameters(sb, command.Returns, domainName, indentLevel + 1);
+                GenerateParameters(sb, command.Returns, domainName, "", indentLevel + 1);
                 sb.AppendLine($"{(newLine == "" ? "" : indent)}) : Core.IType");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
@@ -244,20 +248,20 @@ namespace Generator
 
             var eventName = ToFirstUpper(@event.Name);
 
-            GenerateDoc(sb, @event.Description, @event.Parameters, indentLevel);
+            GenerateDoc(sb, @event.Description, @event.Parameters, eventName, indentLevel);
 
             if (@event.Deprecated == true)
                 sb.AppendLine($"{indent}[Obsolete]");
 
             sb.AppendLine($"{indent}[Core.MethodName(\"{domainName}.{ToFirstLower(@event.Name)}\")]");
             sb.AppendLine($"{indent}public record {eventName}(");
-            GenerateParameters(sb, @event.Parameters, domainName, indentLevel + 1);
+            GenerateParameters(sb, @event.Parameters, domainName, eventName, indentLevel + 1);
             sb.AppendLine($"{indent}) : Core.IEvent");
             sb.AppendLine($"{indent}{{");
             sb.AppendLine($"{indent}}}");
         }
 
-        protected static void GenerateParameters(StringBuilder sb, List<Property> parameters, string domainName, int indentLevel)
+        protected static void GenerateParameters(StringBuilder sb, List<Property> parameters, string domainName, string className, int indentLevel)
         {
             var indent = new string(' ', indentLevel * 4);
 
@@ -269,6 +273,12 @@ namespace Generator
                 var paramName = EscapeKeyword(ToFirstUpper(param.Name));
 
                 var csharpType = GetCSharpType(param.Type, param.Ref, param.Items, domainName);
+
+                if (paramName == className)
+                {
+                    sb.AppendLine($@"{indent}[property: JsonPropertyName(""{ToFirstLower(paramName)}"")]");
+                    paramName = $"{paramName}Property";
+                }
 
                 var arg = $"{csharpType} {paramName}";
                 if (param.Optional == true)
@@ -283,7 +293,7 @@ namespace Generator
             }
         }
 
-        protected static void GenerateDoc(StringBuilder sb, string? description, List<Property> parameters, int indentLevel)
+        protected static void GenerateDoc(StringBuilder sb, string? description, List<Property> parameters, string className, int indentLevel)
         {
             var indent = new string(' ', indentLevel * 4);
 
@@ -297,11 +307,16 @@ namespace Generator
                 sb.AppendLine($"{indent}/// </summary>");
             }
 
+            parameters = parameters.OrderBy(p => p.Optional == true).ToList();
+
             foreach (var param in parameters)
             {
                 if (!string.IsNullOrWhiteSpace(param.Description))
                 {
                     var paramName = ToFirstUpper(param.Name);
+
+                    if (paramName == className)
+                        paramName = $"{paramName}Property";
 
                     var safeDesc = SecurityElement.Escape(param.Description.Trim())
                         .Replace("\r\n", "\n")
@@ -338,8 +353,11 @@ namespace Generator
                     return "JsonNode";
             }
             if (!string.IsNullOrEmpty(@ref))
+            {
+                if (@ref == domainName)
+                    @ref = $"{@ref}Type";
                 return @ref.Contains(".") ? $"{@ref}" : $"{domainName}.{@ref}";
-
+            }
             throw new ArgumentOutOfRangeException($"({nameof(type)}, {nameof(@ref)})");
         }
 
