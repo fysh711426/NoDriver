@@ -1,14 +1,13 @@
 ﻿using NoDriver.Cdp;
 using System.Diagnostics;
 using System.Drawing;
-using static NoDriver.Cdp.DOM;
 
 namespace NoDriver.Core.Runtime
 {
     public class Tab : Connection
     {
         private int? _windowId = null;
-        private Node? _dom = null;
+        private Cdp.DOM.Node? _dom = null;
         private List<string> _downloadBehavior = new();
 
         private bool _prepHeadlessDone = false;
@@ -17,7 +16,7 @@ namespace NoDriver.Core.Runtime
         public string InspectorUrl
             => $"http://{Browser.Config.Host}:{Browser.Config.Port}/devtools/inspector.html?ws={WebSocketUrl.Substring(5)}";
 
-        public Tab(string webSocketUrl, dynamic? target = null, Browser? browser = null) : 
+        public Tab(string webSocketUrl, Cdp.Target.TargetInfo? target = null, Browser? browser = null) : 
             base(webSocketUrl, target, browser)
         {
         }

@@ -3,6 +3,7 @@ using NoDriver.Core.Tools;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Reflection;
+using System.Runtime.Intrinsics.Arm;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -20,7 +21,7 @@ namespace NoDriver.Core.Runtime
         public string WebSocketUrl { get; } = "";
         public Browser? Browser { get; } = null;
         public ClientWebSocket? WebSocket { get; private set; } = null;
-        public dynamic? Target { get; } = null;
+        public Cdp.Target.TargetInfo? Target { get; } = null;
 
         public ConcurrentDictionary<int, Transaction<ICommand>> Mapper { get; } = new();
         public ConcurrentDictionary<string, List<IDomainEventHandlerWrapper>> Handlers { get; } = new();
@@ -29,7 +30,7 @@ namespace NoDriver.Core.Runtime
         public bool Closed => 
             WebSocket == null || WebSocket.State != WebSocketState.Open;
 
-        public Connection(string webSocketUrl, dynamic? target = null, Browser? browser = null)
+        public Connection(string webSocketUrl, Cdp.Target.TargetInfo? target = null, Browser? browser = null)
         {
             WebSocketUrl = webSocketUrl;
             Target = target;

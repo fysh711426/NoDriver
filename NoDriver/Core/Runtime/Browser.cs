@@ -1,27 +1,43 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
+using System.Runtime.Intrinsics.Arm;
 using System.Text.Json;
+using static NoDriver.Cdp.Browser;
+using static NoDriver.Cdp.DOM;
+using static NoDriver.Cdp.Target;
 
 namespace NoDriver.Core.Runtime
 {
     public class Browser
     {
-        
         private Process? _process = null;
         private int? _processPid = null;
         private HTTPApi? _http = null;
+        private CookieJar? _cookies = null;
 
         public Config? Config { get; private set; } = null;
         public Connection? Connection { get; private set; } = null;
-        public ContraDict? Info { get; private set; } = null;
+        public List<Tab> Targets { get; private set; } = new();
+        public JsonElement? Info { get; private set; } = null;
 
-        //private List<string> _targets = new();
-        //
-        //private Target? _target = null;
-        //private bool _keepUserDataDir = true;
-        //private Connection? _connection = null;
+        public string WebSocketUrl => Info?.GetProperty("webSocketDebuggerUrl").GetString();
+
+        public Tab MainTab => Targets.Where(x => x.Type == "page").FirstOrDefault();
+
+        public List<Tab> Tabs => Targets.Where(item => item.Type == "page").ToList();
+
+        public CookieJar Cookies
+        {
+            get
+            {
+                if (_cookies == null)
+                    _cookies = new(this);
+                return _cookies;
+            }
+        }
+
+        public bool Stopped => _process == null || _process.HasExited;
 
         private Browser() 
         {
@@ -32,6 +48,119 @@ namespace NoDriver.Core.Runtime
             var browser = new Browser();
             browser.Config = config ?? new();
             return await browser.StartAsync();
+        }
+
+        public async Task WaitAsync(double time = 0.1, CancellationToken token = default)
+        {
+            try
+            {
+                await Task.WhenAll(
+                    UpdateTargetsAsync(), 
+                    Task.Delay(TimeSpan.FromSeconds(time), token));
+            }
+            catch (OperationCanceledException) { }
+        }
+
+        private void HandleTargetUpdate(IEvent @event)
+        {
+            if (@event is Cdp.Target.TargetInfoChanged infoChanged)
+            {
+                var targetInfo = infoChanged.TargetInfo;
+                var currentTab = Targets.FirstOrDefault(it => it.TargetId == targetInfo.TargetId);
+                if (currentTab != null)
+                    currentTab.Target = targetInfo;
+
+                //if logger.getEffectiveLevel() <= 10:
+                //    changes = util.compare_target_info(current_target, target_info)
+                //    changes_string = ""
+                //    for change in changes:
+                //        key, old, new = change
+                //        changes_string += f"\n{key}: {old} => {new}\n"
+                //    logger.debug(
+                //        "target #%d has changed: %s"
+                //        % (self.targets.index(current_tab), changes_string)
+                //    )
+
+                //    current_tab._target = target_info
+            }
+            else if (@event is Cdp.Target.TargetCreated created)
+            {
+                var targetInfo = created.TargetInfo;
+                var newTarget = new Tab(
+                    $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId}",
+                    targetInfo,
+                    this
+                );
+                Targets.Add(newTarget);
+
+                Console.WriteLine($"Target #{Targets.Count - 1} created => {newTarget.ToString()}");
+            }
+            else if (@event is Cdp.Target.TargetDestroyed destroyed)
+            {
+                var currentTab = Targets.FirstOrDefault(it => it.TargetId == destroyed.TargetId);
+                if (currentTab != null)
+                {
+                    Console.WriteLine($"Target removed. id #{Targets.IndexOf(currentTab)} => {currentTab.ToString()}");
+                    Targets.Remove(currentTab);
+                }
+            }
+            _ = UpdateTargetsAsync();
+        }
+
+        public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false)
+        {
+            if (newTab || newWindow)
+            {
+                var targetId = await Connection.SendAsync(
+                    Cdp.Target.CreateTarget(url, NewWindow: newWindow, EnableBeginFrameControl: true));
+                var connection = Targets.FirstOrDefault(it => it.Type == "page" && it.TargetId == targetId);
+                connection.Browser = this;
+                //await UpdateTargetsAsync();
+                //await self
+                return connection;
+            }
+            else
+            {
+                var connection = Targets.FirstOrDefault(it => it.Type == "page");
+                var result = await connection.SendAsync(Cdp.Page.Navigate(url));
+                connection.FrameId = result.FrameId;
+                connection.Browser = this;
+                //await UpdateTargetsAsync();
+                //await self
+                return connection;
+            }
+        }
+
+        public async Task<Tab> CreateContextAsync(
+            string url = "chrome://welcome",
+            bool newTab = false,
+            bool newWindow = true,
+            bool disposeOnDetach = true,
+            string? proxyServer = null,
+            List<string>? proxyBypassList = null,
+            List<string>? originsWithUniversalNetworkAccess = null,
+            dynamic? proxySslContext= null)
+        {
+            if (!string.IsNullOrWhiteSpace(proxyServer))
+            {
+                var fw = new Util.ProxyForwarder(proxyServer, proxySslContext);
+                proxyServer = fw.ProxyServer;
+            }
+
+            var ctx = await Connection.SendAsync(Cdp.Target.CreateBrowserContext(
+                DisposeOnDetach: disposeOnDetach,
+                ProxyServer: proxyServer,
+                ProxyBypassList: proxyBypassList,
+                OriginsWithUniversalNetworkAccess: originsWithUniversalNetworkAccess
+            ));
+
+            var targetId = await Connection.SendAsync(
+                Cdp.Target.CreateTarget(url, BrowserContextId: ctx, NewWindow: newWindow, ForTab: newTab));
+
+            await WaitAsync(0.5);
+
+            var connection = Targets.FirstOrDefault(it => it.Type == "page" && it.TargetId == targetId);
+            return connection;
         }
 
         public async Task<Browser> StartAsync()
@@ -84,6 +213,7 @@ namespace NoDriver.Core.Runtime
             }
 
             _http = new HTTPApi(Config.Host, Config.Port.Value);
+            //Util.GetRegisteredInstances().Add(this);
 
             await Task.Delay(250);
             for (var i = 0; i < 5; i++)
@@ -105,19 +235,69 @@ namespace NoDriver.Core.Runtime
             if (Info == null)
                 throw new Exception("Failed to connect to browser. If running as root in Linux, you may need Sandbox=false.");
 
-            Connection = new Connection(Info.webSocketDebuggerUrl, this);
-
+            Connection = new Connection(Info.webSocketDebuggerUrl, browser: this);
 
             if (Config.AutodiscoverTargets)
             {
-                // 註冊 CDP 事件處理
-                Connection.RegisterHandler<Cdp.Target.TargetInfoChanged>(HandleTargetUpdate);
-                Connection.RegisterHandler<Cdp.Target.TargetCreated>(HandleTargetUpdate);
-                Connection.RegisterHandler<Cdp.Target.TargetDestroyed>(HandleTargetUpdate);
+                Console.WriteLine("Enabling autodiscover targets.");
+
+                Connection.AddHandler<Cdp.Target.TargetInfoChanged>(HandleTargetUpdate);
+                Connection.AddHandler<Cdp.Target.TargetCreated>(HandleTargetUpdate);
+                Connection.AddHandler<Cdp.Target.TargetDestroyed>(HandleTargetUpdate);
+                Connection.AddHandler<Cdp.Target.TargetCrashed>(HandleTargetUpdate);
 
                 await Connection.SendAsync(Cdp.Target.SetDiscoverTargets(true));
             }
             await UpdateTargetsAsync();
+            //await self
+        }
+
+        public async Task GrantAllPermissionsAsync()
+        {
+            var permissions = Enum.GetValues(typeof(PermissionType)).Cast<PermissionType>().ToList();
+            permissions.Remove(PermissionType.Flash);
+            permissions.Remove(PermissionType.CapturedSurfaceControl);
+            await Connection.SendAsync(Cdp.Browser.GrantPermissions(permissions));
+        }
+
+        // tile_windows
+
+
+        public async Task UpdateTargetsAsync()
+        {
+            var targets = await Connection.SendAsync<List<TargetInfo>>(Cdp.Target.GetTargets());
+
+            foreach (var t in targets)
+            {
+                var existingTab = Targets.FirstOrDefault(it => it.Target.TargetId == t.TargetId);
+                if (existingTab != null)
+                {
+                    //existing_tab.target.__dict__.update(t.__dict__)
+                    existingTab.Target = t;
+                }
+                else
+                {
+                    Targets.Add(new Connection($"ws://{Config.Host}:{Config.Port}/devtools/page/{t.TargetId}", t, this));
+                }
+            }
+            await Task.Yield();
+        }
+
+        public void Stop()
+        {
+            try
+            {
+                Connection?.DisconnectAsync().GetAwaiter().GetResult();
+            }
+            catch { }
+
+            if (_process != null && !_process.HasExited)
+            {
+                try { _process.Kill(true); } // Kill process tree
+                catch { }
+                _process = null;
+                _processPid = null;
+            }
         }
 
         private static int findFreePort()
@@ -136,69 +316,6 @@ namespace NoDriver.Core.Runtime
             finally
             {
                 socket.Close();
-            }
-        }
-    }
-
-    internal class HTTPApi
-    {
-        private readonly string _apiBase;
-
-        private static readonly HttpClient _httpClient = new();
-
-        public HTTPApi(string host, int port)
-        {
-            _apiBase = $"http://{host}:{port}";
-        }
-
-        public async Task<JsonElement> GetAsync(string endpoint, CancellationToken token = default)
-            => await RequestAsync(endpoint, "GET", null, token);
-
-        public async Task<JsonElement> PostAsync(string endpoint, object? data = null, CancellationToken token = default)
-            => await RequestAsync(endpoint, "POST", data, token);
-
-        private async Task<JsonElement> RequestAsync(
-            string endpoint, string method = "GET", object? data = null, CancellationToken token = default)
-        {
-            var url = $"{_apiBase}/json";
-            if (!string.IsNullOrWhiteSpace(endpoint))
-                url = $"{_apiBase}/json/{endpoint}";
-
-            method = method.ToUpper();
-            if (data != null && method == "GET")
-                throw new ArgumentException("GET requests cannot contain data.");
-
-            using (var request = new HttpRequestMessage(new HttpMethod(method), url))
-            {
-                if (data != null)
-                {
-                    request.Content = new StringContent(
-                        JsonSerializer.Serialize(data), Encoding.UTF8, "application/json");
-                }
-
-                using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
-                {
-                    using (var cts = CancellationTokenSource.CreateLinkedTokenSource(token, timeoutCts.Token))
-                    {
-                        try
-                        {
-                            using (var response = await _httpClient.SendAsync(request, cts.Token))
-                            {
-                                response.EnsureSuccessStatusCode();
-                                using (var stream = await response.Content.ReadAsStreamAsync(cts.Token))
-                                {
-                                    return JsonSerializer.Deserialize<JsonElement>(stream);
-                                }
-                            }
-                        }
-                        catch(OperationCanceledException ex)
-                        {
-                            if (timeoutCts.IsCancellationRequested)
-                                throw new TimeoutException("The request timed out after 30 seconds.", ex);
-                            throw;
-                        }
-                    }
-                }
             }
         }
     }
