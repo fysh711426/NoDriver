@@ -1,11 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.Intrinsics.Arm;
 using System.Text.Json;
-using static NoDriver.Cdp.Browser;
-using static NoDriver.Cdp.DOM;
-using static NoDriver.Cdp.Target;
 
 namespace NoDriver.Core.Runtime
 {
@@ -260,8 +256,81 @@ namespace NoDriver.Core.Runtime
             await Connection.SendAsync(Cdp.Browser.GrantPermissions(permissions));
         }
 
-        // tile_windows
+        public async Task<List<int[]>> TileWindowsAsync(List<Tab>? windows = null, int maxColumns = 0)
+        {
+            var primaryScreen = System.Windows.Forms.Screen.PrimaryScreen;
+            if (primaryScreen == null)
+            {
+                Console.WriteLine("No monitors detected.");
+                return new();
+            }
 
+            double screenWidth = primaryScreen.Bounds.Width;
+            double screenHeight = primaryScreen.Bounds.Height;
+
+            var distinctWindows = new Dictionary<string, List<Tab>>();
+
+            var tabs = Tabs;
+            if (windows != null && windows.Count > 0)
+                tabs = windows;
+
+            foreach (var tab in tabs)
+            {
+                var (windowId, bounds) = await tab.GetWindowAsync();
+                if (!distinctWindows.ContainsKey(windowId))
+                    distinctWindows[windowId] = new();
+                distinctWindows[windowId].Add(tab);
+            }
+
+            var numWindows = distinctWindows.Count;
+            if (numWindows == 0)
+                return new();
+
+            var reqCols = (int)(numWindows * (19.0 / 6.0));
+            if (maxColumns > 0)
+                reqCols = maxColumns;
+            reqCols = Math.Max(1, reqCols);
+            var reqRows = numWindows / reqCols;
+
+            while (reqCols * reqRows < numWindows)
+            {
+                reqRows++;
+            }
+
+            var boxW = (int)Math.Floor(screenWidth / reqCols - 1);
+            var boxH = (int)Math.Floor(screenHeight / reqRows);
+
+            using (var distinctWindowsIter = distinctWindows.Values.GetEnumerator())
+            {
+                var grid = new List<int[]>();
+                for (var x = 0; x < reqCols; x++)
+                {
+                    for (var y = 0; y < reqRows; y++)
+                    {
+                        if (!distinctWindowsIter.MoveNext())
+                            break;
+
+                        var _tabs = distinctWindowsIter.Current;
+                        if (_tabs == null || _tabs.Count == 0)
+                            continue;
+
+                        var tab = _tabs[0];
+                        try
+                        {
+                            var pos = new int[] { x * boxW, y * boxH, boxW, boxH };
+                            grid.Add(pos);
+                            await tab.SetWindowSizeAsync(pos[0], pos[1], pos[2], pos[3]);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Could not set window size. exception => {ex.Message}");
+                            continue;
+                        }
+                    }
+                }
+                return grid;
+            }
+        }
 
         public async Task UpdateTargetsAsync()
         {
@@ -293,7 +362,12 @@ namespace NoDriver.Core.Runtime
 
             if (_process != null && !_process.HasExited)
             {
-                try { _process.Kill(true); } // Kill process tree
+                try
+                {
+                    _process.Kill(true);
+                    _process.Dispose();
+                    Console.WriteLine($"Killed browser with pid {_process.Id} successfully.");
+                }
                 catch { }
                 _process = null;
                 _processPid = null;
@@ -318,5 +392,27 @@ namespace NoDriver.Core.Runtime
                 socket.Close();
             }
         }
+
+        public Tab this[int index] => Tabs[index];
+
+        public Tab this[string query]
+        {
+            get
+            {
+                var lowerQuery = query.ToLowerInvariant();
+                foreach (var t in Tabs)
+                {
+                    if (JsonSerializer.Serialize(t.Target).ToLowerInvariant().Contains(lowerQuery))
+                        return t;
+                }
+                return Tabs[0];
+            }
+        }
+
+        // 提供 C# 中類似 await browser 的效果
+        //public System.Runtime.CompilerServices.TaskAwaiter GetAwaiter()
+        //{
+        //    return UpdateTargetsAsync().GetAwaiter();
+        //}
     }
 }
