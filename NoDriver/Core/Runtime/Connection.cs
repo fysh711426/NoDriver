@@ -20,7 +20,7 @@ namespace NoDriver.Core.Runtime
         public string WebSocketUrl { get; } = "";
         public Browser? Browser { get; } = null;
         public ClientWebSocket? WebSocket { get; private set; } = null;
-        public Cdp.Target.TargetInfo? Target { get; } = null;
+        public Cdp.Target.TargetInfo? Target { get; set; } = null;
 
         public ConcurrentDictionary<int, Transaction<ICommand>> Mapper { get; } = new();
         public ConcurrentDictionary<string, List<IDomainEventHandlerWrapper>> Handlers { get; } = new();
@@ -98,6 +98,7 @@ namespace NoDriver.Core.Runtime
             type.GetCustomAttribute<MethodNameAttribute>()?.MethodName ??
                 throw new Exception($"{nameof(MethodNameAttribute)} is required on type {type.Name} but it is not presented.");
 
+        //ok
         public void AddHandler<TEvent>(AsyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
         {
             if (handler == null) 
@@ -105,6 +106,7 @@ namespace NoDriver.Core.Runtime
             AddHandlerInternal(new DomainEventHandlerWrapper<TEvent>(handler));
         }
 
+        //ok
         public void AddHandler<TEvent>(SyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
         {
             if (handler == null)
@@ -112,6 +114,7 @@ namespace NoDriver.Core.Runtime
             AddHandlerInternal(new DomainEventHandlerWrapper<TEvent>(handler));
         }
 
+        //ok
         private void AddHandlerInternal<TEvent>(DomainEventHandlerWrapper<TEvent> wrapper) where TEvent : IEvent
         {
             var eventName = GetMethodName(typeof(TEvent));
@@ -122,16 +125,19 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        //ok
         public void RemoveHandler<TEvent>(AsyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
         {
             RemoveHandlerInternal<TEvent>(handler);
         }
 
+        //ok
         public void RemoveHandler<TEvent>(SyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
         {
             RemoveHandlerInternal<TEvent>(handler);
         }
 
+        //ok
         private void RemoveHandlerInternal<TEvent>(Delegate handler) where TEvent : IEvent
         {
             var eventName = GetMethodName(typeof(TEvent));

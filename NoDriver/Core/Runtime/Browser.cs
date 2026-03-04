@@ -1,4 +1,6 @@
-﻿using System.Diagnostics;
+﻿using Silk.NET.Maths;
+using Silk.NET.SDL;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -14,7 +16,7 @@ namespace NoDriver.Core.Runtime
 
         public Config? Config { get; private set; } = null;
         public Connection? Connection { get; private set; } = null;
-        public List<Tab> Targets { get; private set; } = new();
+        public List<Connection> Targets { get; private set; } = new();
         public JsonElement? Info { get; private set; } = null;
 
         public string WebSocketUrl => Info?.GetProperty("webSocketDebuggerUrl").GetString();
@@ -39,6 +41,7 @@ namespace NoDriver.Core.Runtime
         {
         }
 
+        //ok
         public static async Task<Browser> CreateAsync(Config? config = null)
         {
             var browser = new Browser();
@@ -46,15 +49,12 @@ namespace NoDriver.Core.Runtime
             return await browser.StartAsync();
         }
 
+        //ok
         public async Task WaitAsync(double time = 0.1, CancellationToken token = default)
         {
-            try
-            {
-                await Task.WhenAll(
-                    UpdateTargetsAsync(), 
-                    Task.Delay(TimeSpan.FromSeconds(time), token));
-            }
-            catch (OperationCanceledException) { }
+            await Task.WhenAll(
+                UpdateTargetsAsync(token),
+                Task.Delay(TimeSpan.FromSeconds(time), token));
         }
 
         private void HandleTargetUpdate(IEvent @event)
@@ -176,7 +176,7 @@ namespace NoDriver.Core.Runtime
             if (Config.Host == null || Config.Port == null)
             {
                 Config.Host = "127.0.0.1";
-                Config.Port = findFreePort();
+                Config.Port = Util.FreePort();
             }
 
             var exePath = Config.BrowserExecutablePath;
@@ -256,19 +256,27 @@ namespace NoDriver.Core.Runtime
             await Connection.SendAsync(Cdp.Browser.GrantPermissions(permissions));
         }
 
-        public async Task<List<int[]>> TileWindowsAsync(List<Tab>? windows = null, int maxColumns = 0)
+        //ok
+        public async Task<List<(int left, int top, int width, int height)>?> TileWindowsAsync(List<Tab>? windows = null, int maxColumns = 0, CancellationToken token = default)
         {
-            var primaryScreen = System.Windows.Forms.Screen.PrimaryScreen;
-            if (primaryScreen == null)
+            var sdl = Sdl.GetApi();
+            if (sdl.Init(Sdl.InitVideo) < 0)
             {
-                Console.WriteLine("No monitors detected.");
-                return new();
+                Console.WriteLine("SDL init failed.");
+                return null;
             }
 
-            double screenWidth = primaryScreen.Bounds.Width;
-            double screenHeight = primaryScreen.Bounds.Height;
+            Rectangle<int> rect = default;
+            if (sdl.GetDisplayBounds(0, ref rect) < 0)
+            {
+                Console.WriteLine("No monitors detected.");
+                return null;
+            }
 
-            var distinctWindows = new Dictionary<string, List<Tab>>();
+            var screenWidth = rect.Size.X;
+            var screenHeight = rect.Size.Y;
+
+            var distinctWindows = new Dictionary<int, List<Tab>>();
 
             var tabs = Tabs;
             if (windows != null && windows.Count > 0)
@@ -276,15 +284,19 @@ namespace NoDriver.Core.Runtime
 
             foreach (var tab in tabs)
             {
-                var (windowId, bounds) = await tab.GetWindowAsync();
-                if (!distinctWindows.ContainsKey(windowId))
-                    distinctWindows[windowId] = new();
-                distinctWindows[windowId].Add(tab);
+                var result = await tab.GetWindowAsync(token);
+                if (result != null)
+                {
+                    var (windowId, _) = result.Value;
+                    if (!distinctWindows.ContainsKey(windowId.Value))
+                        distinctWindows[windowId.Value] = new();
+                    distinctWindows[windowId.Value].Add(tab);
+                }
             }
 
             var numWindows = distinctWindows.Count;
             if (numWindows == 0)
-                return new();
+                return null;
 
             var reqCols = (int)(numWindows * (19.0 / 6.0));
             if (maxColumns > 0)
@@ -297,12 +309,12 @@ namespace NoDriver.Core.Runtime
                 reqRows++;
             }
 
-            var boxW = (int)Math.Floor(screenWidth / reqCols - 1);
-            var boxH = (int)Math.Floor(screenHeight / reqRows);
+            var boxW = (int)Math.Floor((double)screenWidth / reqCols - 1);
+            var boxH = (int)Math.Floor((double)screenHeight / reqRows);
 
             using (var distinctWindowsIter = distinctWindows.Values.GetEnumerator())
             {
-                var grid = new List<int[]>();
+                var grid = new List<(int left, int top, int width, int height)>();
                 for (var x = 0; x < reqCols; x++)
                 {
                     for (var y = 0; y < reqRows; y++)
@@ -317,9 +329,9 @@ namespace NoDriver.Core.Runtime
                         var tab = _tabs[0];
                         try
                         {
-                            var pos = new int[] { x * boxW, y * boxH, boxW, boxH };
+                            var pos = (left: x * boxW, top: y * boxH, width: boxW, height: boxH);
                             grid.Add(pos);
-                            await tab.SetWindowSizeAsync(pos[0], pos[1], pos[2], pos[3]);
+                            await tab.SetWindowSizeAsync(pos.left, pos.top, pos.width, pos.height, token);
                         }
                         catch (Exception ex)
                         {
@@ -332,43 +344,30 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public async Task UpdateTargetsAsync()
+        //ok
+        public async Task UpdateTargetsAsync(CancellationToken token = default)
         {
-            var targets = await Connection.SendAsync<List<TargetInfo>>(Cdp.Target.GetTargets());
-
-            foreach (var t in targets)
+            if (Connection != null)
             {
-                var existingTab = Targets.FirstOrDefault(it => it.Target.TargetId == t.TargetId);
-                if (existingTab != null)
+                var result = await Connection.SendAsync(Cdp.Target.GetTargets(), token: token);
+
+                var targets = result.TargetInfos;
+                foreach (var t in targets)
                 {
-                    //existing_tab.target.__dict__.update(t.__dict__)
-                    existingTab.Target = t;
-                }
-                else
-                {
-                    Targets.Add(new Connection($"ws://{Config.Host}:{Config.Port}/devtools/page/{t.TargetId}", t, this));
+                    var existingTab = Targets.FirstOrDefault(it => it.Target?.TargetId == t.TargetId);
+                    if (existingTab != null)
+                    {
+                        if (existingTab.Target != t)
+                            existingTab.Target = t;
+                    }
+                    else
+                    {
+                        if (Config?.Host != null && Config?.Port != null)
+                            Targets.Add(new Connection($"ws://{Config.Host}:{Config.Port}/devtools/page/{t.TargetId}", t, this));
+                    }
                 }
             }
             await Task.Yield();
-        }
-
-        private static int findFreePort()
-        {
-            var socket = new Socket(
-                AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            try
-            {
-                var localEP = new IPEndPoint(IPAddress.Any, 0);
-                socket.Bind(localEP);
-                var freeEP = (IPEndPoint?)socket.LocalEndPoint;
-                if (freeEP == null)
-                    throw new Exception("Not found free port.");
-                return freeEP.Port;
-            }
-            finally
-            {
-                socket.Close();
-            }
         }
 
         public async ValueTask DisposeAsync()

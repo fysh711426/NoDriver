@@ -1,6 +1,11 @@
 ﻿using NoDriver.Cdp;
+using NoDriver.Core.Messaging;
+using Silk.NET.Core.Native;
 using System.Diagnostics;
 using System.Drawing;
+using System.Net.Http.Headers;
+using System.Runtime.Intrinsics.Arm;
+using static NoDriver.Cdp.Browser;
 
 namespace NoDriver.Core.Runtime
 {
@@ -32,6 +37,7 @@ namespace NoDriver.Core.Runtime
             return Task.CompletedTask;
         }
 
+        // ok
         public async Task<TResponse> FeedCdpAsync<TResponse>(
             ICommand<TResponse> command, CancellationToken token = default) where TResponse : IType
         {
@@ -125,7 +131,8 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        public async Task<List<Element>> SelectAllAsync(string selector, double timeout = 10, bool includeFrames = false)
+        //ok
+        public async Task<List<Element>> SelectAllAsync(string selector, double timeout = 10, bool includeFrames = false, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
             selector = selector.Trim();
@@ -133,36 +140,33 @@ namespace NoDriver.Core.Runtime
             var items = new List<Element>();
             if (includeFrames)
             {
-                var frames = await QuerySelectorAllAsync("iframe");
+                var frames = await QuerySelectorAllAsync("iframe", token: token);
                 foreach (var fr in frames)
                 {
-                    items.AddRange(await fr.QuerySelectorAllAsync(selector));
+                    items.AddRange(await fr.QuerySelectorAllAsync(selector, token: token));
                 }
             }
 
-            items.AddRange(await QuerySelectorAllAsync(selector));
+            items.AddRange(await QuerySelectorAllAsync(selector, token: token));
             while (items.Count == 0)
             {
-                await WaitAsync();
-                items.AddRange(await QuerySelectorAllAsync(selector));
+                await WaitAsync(token: token);
+                items.AddRange(await QuerySelectorAllAsync(selector, token: token));
                 if (sw.Elapsed.TotalSeconds > timeout)
                     return items;
-                await SleepAsync(0.5);
+                await WaitAsync(0.5, token);
             }
             return items;
         }
 
+        //ok
         public async Task WaitAsync(double time = 0.5, CancellationToken token = default)
         {
             if (Browser != null)
             {
-                try
-                {
-                    await Task.WhenAll(
-                        Browser.UpdateTargetsAsync(),
-                        Task.Delay(TimeSpan.FromSeconds(time), token));
-                }
-                catch (OperationCanceledException) { }
+                await Task.WhenAll(
+                    Browser.UpdateTargetsAsync(token),
+                    Task.Delay(TimeSpan.FromSeconds(time), token));
             }
         }
 
@@ -216,9 +220,9 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public async Task<List<Element>> QuerySelectorAllAsync(string selector, Node node = null)
+        public async Task<List<Element>> QuerySelectorAllAsync(string selector, Cdp.DOM.Node node = null)
         {
-            var doc = null as Node;
+            var doc = null as Cdp.DOM.Node;
             if (node == null)
             {
                 doc = await SendAsync(GetDocument(-1, true));
@@ -482,18 +486,21 @@ namespace NoDriver.Core.Runtime
                 return remoteObject?.Value;
             return (remoteObject, exceptionDetails);
         }
-
+        
+        //ok
         public async Task CloseAsync(CancellationToken token = default)
         {
             if (Target?.TargetId != null)
-            {
-                await SendAsync(Cdp.Target.CloseTarget(Target.TargetId), token);
-            }
+                await SendAsync(Cdp.Target.CloseTarget(Target.TargetId), token: token);
         }
 
-        public async Task<(string WindowId, Cdp.Browser.Bounds Bounds)> GetWindowAsync()
+        //ok
+        public async Task<(Cdp.Browser.WindowID windowId, Cdp.Browser.Bounds bounds)?> GetWindowAsync(CancellationToken token = default)
         {
-            return await SendAsync(Cdp.Browser.GetWindowForTarget(TargetId));
+            if (Target?.TargetId == null)
+                return null;
+            var result = await SendAsync(Cdp.Browser.GetWindowForTarget(Target.TargetId), token: token);
+            return (result.WindowId, result.Bounds);
         }
 
         public async Task<string> GetContentAsync()
@@ -502,34 +509,41 @@ namespace NoDriver.Core.Runtime
             return await SendAsync(DOM.GetOuterHtml(doc.BackendNodeId));
         }
 
-        public Task MaximizeAsync()
+        //ok
+        public async Task MaximizeAsync(CancellationToken token = default)
         {
-            SetWindowStateAsync(state: "maximize");
+            await SetWindowStateAsync(state: "maximize", token: token);
         }
 
-        public Task MinimizeAsync()
+        //ok
+        public async Task MinimizeAsync(CancellationToken token = default)
         {
-            SetWindowStateAsync(state: "minimize");
+            await SetWindowStateAsync(state: "minimize", token: token);
         }
 
-        public Task FullscreenAsync()
+        //ok
+        public async Task FullscreenAsync(CancellationToken token = default)
         {
-            SetWindowStateAsync(state: "fullscreen");
+            await SetWindowStateAsync(state: "fullscreen", token: token);
         }
 
-        public Task MedimizeAsync()
+        //ok
+        public async Task MedimizeAsync(CancellationToken token = default)
         {
-            SetWindowStateAsync(state: "normal");
+            await SetWindowStateAsync(state: "normal", token: token);
         }
 
-        public Task SetWindowSizeAsync(int left = 0, int top = 0, int width = 1280, int height = 1024)
+        //ok
+        public async Task SetWindowSizeAsync(int left = 0, int top = 0, int width = 1280, int height = 1024, CancellationToken token = default)
         {
-            SetWindowStateAsync(left, top, width, height);
+            await SetWindowStateAsync(left, top, width, height, token: token);
         }
 
+        //ok
         public async Task ActivateAsync(CancellationToken token = default)
         {
-            await SendAsync(Cdp.Target.ActivateTarget(Target.TargetId), token: token);
+            if (Target?.TargetId != null)
+                await SendAsync(Cdp.Target.ActivateTarget(Target.TargetId), token: token);
         }
 
         public Task BringToFrontAsync()
@@ -537,65 +551,68 @@ namespace NoDriver.Core.Runtime
             await ActivateAsync();
         }
 
-        public async Task SetWindowStateAsync(int left = 0, int top = 0, int width = 1280, int height = 720, string state = "normal")
+        //ok
+        public async Task SetWindowStateAsync(int left = 0, int top = 0, int width = 1280, int height = 720, string state = "normal", CancellationToken token = default)
         {
-            var availableStates = new[] { "minimized", "maximized", "fullscreen", "normal" };
-            var stateName = availableStates.FirstOrDefault(s => s.Contains(state.ToLowerInvariant()));
-            if (stateName == null) 
+            var availableStates = new[]
+            {
+                "minimized", "maximized", "fullscreen", "normal"
+            };
+            var stateName = availableStates.FirstOrDefault(it => it.Contains(state.ToLowerInvariant()));
+            if (stateName == null)
                 throw new ArgumentException($"Could not determine any of {string.Join(",", availableStates)} from input '{state}'");
 
-            var (windowId, bounds) = await GetWindowAsync();
+            var result = await GetWindowAsync(token);
+            if (result == null)
+                return;
+            var (windowId, _) = result.Value;
 
-            //window_state = getattr(
-            //    cdp.browser.WindowState, state_name.upper(), cdp.browser.WindowState.NORMAL
-            //)
-
-            var newBounds = null as Cdp.Browser.Bounds;
             if (stateName == "normal")
             {
-                newBounds = new Cdp.Browser.Bounds 
-                { 
-                    Left = left, 
-                    Top = top, 
-                    Width = width, 
-                    Height = height, 
-                    WindowState = "normal" 
-                };
+                var bounds = new Cdp.Browser.Bounds(left, top, width, height, new("normal"));
+                await SendAsync(Cdp.Browser.SetWindowBounds(windowId, bounds), token: token);
             }
             else
             {
                 await SetWindowStateAsync(state: "normal");
-                newBounds = new Cdp.Browser.Bounds 
-                { 
-                    WindowState = stateName 
-                };
+                var bounds = new Cdp.Browser.Bounds(WindowState: new(stateName));
+                await SendAsync(Cdp.Browser.SetWindowBounds(windowId, bounds), token: token);
             }
-            await SendAsync(Cdp.Browser.SetWindowBounds(windowId, newBounds));
         }
 
-        public async Task ScrollDownAsync(int amount = 25)
+        //ok
+        public async Task ScrollDownAsync(int amount = 25, CancellationToken token = default)
         {
-            var (_, bounds) = await GetWindowAsync();
+            var result = await GetWindowAsync(token);
+            if (result == null)
+                return;
+            var (_, bounds) = result.Value;
+
             await SendAsync(Input.SynthesizeScrollGesture(
-                0, 0, 
-                xDistance: -(bounds.Height * (amount / 100.0)),
-                yOverscroll:0,
-                xOverscroll:0, 
-                preventFling: true, 
-                repeatDelayMs: 0,
-                speed: 7777));
+                0, 0,
+                XDistance: -(bounds.Height * (amount / 100.0)),
+                YOverscroll: 0,
+                XOverscroll: 0,
+                PreventFling: true,
+                RepeatDelayMs: 0,
+                Speed: 7777), token: token);
         }
 
-        public async Task ScrollUpAsync(int amount = 25)
+        //ok
+        public async Task ScrollUpAsync(int amount = 25, CancellationToken token = default)
         {
-            var (_, bounds) = await GetWindowAsync();
+            var result = await GetWindowAsync(token);
+            if (result == null)
+                return;
+            var (_, bounds) = result.Value;
+
             await SendAsync(Input.SynthesizeScrollGesture(
-                0, 0, 
-                yDistance: bounds.Height * (amount / 100.0),
-                xOverscroll: 0, 
-                preventFling: true,
-                repeatDelayMs: 0,
-                speed: 7777));
+                0, 0,
+                YDistance: bounds.Height * (amount / 100.0),
+                XOverscroll: 0,
+                PreventFling: true,
+                RepeatDelayMs: 0,
+                Speed: 7777), token: token);
         }
 
         public async Task<Element?> WaitForAsync(string selector = "", string text = "", double timeout = 10)

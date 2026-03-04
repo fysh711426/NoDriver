@@ -129,7 +129,7 @@ namespace Generator
                 sb.AppendLine($"{indent}[JsonConverter(typeof(Core.PrimitiveTypeConverter))]");
                 sb.AppendLine($"{indent}public record {typeName}(");
                 sb.AppendLine($"{indent}    {csharpType} Value");
-                sb.AppendLine($"{indent}) : Core.PrimitiveType<{csharpType}>(value)");
+                sb.AppendLine($"{indent}) : Core.PrimitiveType<{csharpType}>(Value)");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
             }

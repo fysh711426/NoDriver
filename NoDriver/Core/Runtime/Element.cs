@@ -1,29 +1,27 @@
 ﻿using NoDriver.Core.Messaging;
 using System.Collections.Concurrent;
 using System.Text.Json;
-using static NoDriver.Cdp.DOM;
-using static NoDriver.Cdp.Runtime;
 
 namespace NoDriver.Core.Runtime
 {
     public class Element
     {
         private Tab _tab;
-        private Node _node;
-        private Node? _tree;
+        private Cdp.DOM.Node _node;
+        private Cdp.DOM.Node? _tree;
         private Element? _parent = null;
-        private RemoteObject? _remoteObject = null;
+        private Cdp.Runtime.RemoteObject? _remoteObject = null;
         private ConcurrentDictionary<string, string> _attrs = new(StringComparer.OrdinalIgnoreCase);
 
         public string Tag => NodeName.ToLowerInvariant();
         public string TagName => Tag;
-        public NodeId NodeId => _node.NodeId;
-        public BackendNodeId BackendNodeId => _node.BackendNodeId;
+        public Cdp.DOM.NodeId NodeId => _node.NodeId;
+        public Cdp.DOM.BackendNodeId BackendNodeId => _node.BackendNodeId;
         public int NodeType => _node.NodeType;
         public string NodeName => _node.NodeName;
         public string LocalName => _node.LocalName;
         public string NodeValue => _node.NodeValue;
-        public NodeId? ParentId => _node.ParentId;
+        public Cdp.DOM.NodeId? ParentId => _node.ParentId;
         public int? ChildNodeCount => _node.ChildNodeCount;
         public IReadOnlyList<string>? Attributes => _node.Attributes;
         public string? DocumentUrl => _node.DocumentURL;
@@ -33,19 +31,19 @@ namespace NoDriver.Core.Runtime
         public string? InternalSubset => _node.InternalSubset;
         public string? XmlVersion => _node.XmlVersion;
         public string? Value => _node.Value;
-        public PseudoType? PseudoType => _node.PseudoType;
+        public Cdp.DOM.PseudoType? PseudoType => _node.PseudoType;
         public string? PseudoIdentifier => _node.PseudoIdentifier;
-        public ShadowRootType? ShadowRootType => _node.ShadowRootType;
+        public Cdp.DOM.ShadowRootType? ShadowRootType => _node.ShadowRootType;
         public string? FrameId => _node.FrameId?.Value;
-        public Node? ContentDocument => _node.ContentDocument;
-        public IReadOnlyList<Node>? ShadowRoots => _node.ShadowRoots;
-        public Node? TemplateContent => _node.TemplateContent;
-        public IReadOnlyList<Node>? PseudoElements => _node.PseudoElements;
-        public Node? ImportedDocument => _node.ImportedDocument;
-        public IReadOnlyList<BackendNode>? DistributedNodes => _node.DistributedNodes;
+        public Cdp.DOM.Node? ContentDocument => _node.ContentDocument;
+        public IReadOnlyList<Cdp.DOM.Node>? ShadowRoots => _node.ShadowRoots;
+        public Cdp.DOM.Node? TemplateContent => _node.TemplateContent;
+        public IReadOnlyList<Cdp.DOM.Node>? PseudoElements => _node.PseudoElements;
+        public Cdp.DOM.Node? ImportedDocument => _node.ImportedDocument;
+        public IReadOnlyList<Cdp.DOM.BackendNode>? DistributedNodes => _node.DistributedNodes;
         public bool? IsSvg => _node.IsSVG;
-        public CompatibilityMode? CompatibilityMode => _node.CompatibilityMode;
-        public BackendNode? AssignedSlot => _node.AssignedSlot;
+        public Cdp.DOM.CompatibilityMode? CompatibilityMode => _node.CompatibilityMode;
+        public Cdp.DOM.BackendNode? AssignedSlot => _node.AssignedSlot;
         public Tab Tab => _tab;
         public List<Element> ShadowChildren
         {
@@ -119,8 +117,8 @@ namespace NoDriver.Core.Runtime
                 return children;
             }
         }
-        public RemoteObject? RemoteObject => _remoteObject;
-        public RemoteObjectId? ObjectScsid => RemoteObject?.ObjectId;
+        public Cdp.Runtime.RemoteObject? RemoteObject => _remoteObject;
+        public Cdp.Runtime.RemoteObjectId? ObjectScsid => RemoteObject?.ObjectId;
         public string Text
         {
             get
@@ -138,12 +136,13 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public Element(Node node, Tab tab, Node? tree = null)
+        public Element(Cdp.DOM.Node node, Tab tab, Cdp.DOM.Node? tree = null)
         {
             if (node == null)
                 throw new ArgumentException("Node cannot be null.");
 
             _tab = tab;
+            _node = node;
             _tree = tree;
             MakeAttrs();
         }
@@ -366,11 +365,12 @@ namespace NoDriver.Core.Runtime
             await _tab.MouseDragAsync(startPoint, endPoint, relative, steps);
         }
 
-        public async Task ScrollIntoViewAsync()
+        //ok
+        public async Task ScrollIntoViewAsync(CancellationToken token = default)
         {
             try
             {
-                await Tab.SendAsync(Cdp.DOM.ScrollIntoViewIfNeeded(BackendNodeId));
+                await Tab.SendAsync(Cdp.DOM.ScrollIntoViewIfNeeded(BackendNodeId: BackendNodeId), token: token);
             }
             catch (Exception e)
             {

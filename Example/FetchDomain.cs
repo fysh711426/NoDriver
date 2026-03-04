@@ -15,7 +15,7 @@ namespace Example
                     await browser.GetAsync("https://www.google.com", newWindow: true);
                 }
 
-                SyncDomainEventHandler<Cdp.Fetch.RequestPaused> requestHandler = async (e, conn) =>
+                AsyncDomainEventHandler<Cdp.Fetch.RequestPaused> requestHandler = async (e, conn) =>
                 {
                     if (conn is Tab tab)
                     {
