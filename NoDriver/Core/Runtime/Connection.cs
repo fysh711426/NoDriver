@@ -331,7 +331,7 @@ namespace NoDriver.Core.Runtime
                     if (Handlers.TryGetValue(eventName, out var list))
                     {
                         var tasks = list.ToList()
-                            .Select(it => it.HandleAsync(@event))
+                            .Select(it => it.HandleAsync(@event, this))
                             .ToList();
 
                         foreach (var task in tasks)

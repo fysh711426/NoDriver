@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace NoDriver.Core.Runtime
 {
-    public class Browser
+    public class Browser : IDisposable, IAsyncDisposable
     {
         private Process? _process = null;
         private int? _processPid = null;
@@ -352,28 +352,6 @@ namespace NoDriver.Core.Runtime
             await Task.Yield();
         }
 
-        public void Stop()
-        {
-            try
-            {
-                Connection?.DisconnectAsync().GetAwaiter().GetResult();
-            }
-            catch { }
-
-            if (_process != null && !_process.HasExited)
-            {
-                try
-                {
-                    _process.Kill(true);
-                    _process.Dispose();
-                    Console.WriteLine($"Killed browser with pid {_process.Id} successfully.");
-                }
-                catch { }
-                _process = null;
-                _processPid = null;
-            }
-        }
-
         private static int findFreePort()
         {
             var socket = new Socket(
@@ -390,6 +368,44 @@ namespace NoDriver.Core.Runtime
             finally
             {
                 socket.Close();
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                if (Connection != null)
+                    await Connection.DisposeAsync();
+            }
+            catch { }
+
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_process != null && !_process.HasExited)
+                {
+                    try
+                    {
+                        _process.Kill(true);
+                        _process.Dispose();
+                        Console.WriteLine($"Killed browser with pid {_process.Id} successfully.");
+                    }
+                    catch { }
+                    _process = null;
+                    _processPid = null;
+                }
             }
         }
 

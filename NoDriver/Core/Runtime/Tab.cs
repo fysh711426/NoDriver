@@ -152,13 +152,17 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        public async Task SleepAsync(double t = 1)
+        public async Task WaitAsync(double time = 0.5, CancellationToken token = default)
         {
             if (Browser != null)
             {
-                var updateTask = Browser.UpdateTargetsAsync();
-                var sleepTask = Task.Delay(TimeSpan.FromSeconds(t));
-                await Task.WhenAll(updateTask, sleepTask);
+                try
+                {
+                    await Task.WhenAll(
+                        Browser.UpdateTargetsAsync(),
+                        Task.Delay(TimeSpan.FromSeconds(time), token));
+                }
+                catch (OperationCanceledException) { }
             }
         }
 
@@ -479,11 +483,11 @@ namespace NoDriver.Core.Runtime
             return (remoteObject, exceptionDetails);
         }
 
-        public async Task CloseAsync()
+        public async Task CloseAsync(CancellationToken token = default)
         {
             if (Target?.TargetId != null)
             {
-                await SendAsync(Cdp.Target.CloseTarget(Target.TargetId));
+                await SendAsync(Cdp.Target.CloseTarget(Target.TargetId), token);
             }
         }
 
@@ -523,9 +527,9 @@ namespace NoDriver.Core.Runtime
             SetWindowStateAsync(left, top, width, height);
         }
 
-        public async Task ActivateAsync()
+        public async Task ActivateAsync(CancellationToken token = default)
         {
-            await SendAsync(Cdp.Target.ActivateTarget(Target.TargetId));
+            await SendAsync(Cdp.Target.ActivateTarget(Target.TargetId), token: token);
         }
 
         public Task BringToFrontAsync()
@@ -592,11 +596,6 @@ namespace NoDriver.Core.Runtime
                 preventFling: true,
                 repeatDelayMs: 0,
                 speed: 7777));
-        }
-
-        public async Task WaitAsync(double t = 0.5)
-        {
-            await SleepAsync(t);
         }
 
         public async Task<Element?> WaitForAsync(string selector = "", string text = "", double timeout = 10)
