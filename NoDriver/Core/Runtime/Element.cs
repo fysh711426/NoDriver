@@ -1,6 +1,10 @@
 ﻿using NoDriver.Core.Messaging;
+using System;
 using System.Collections.Concurrent;
+using System.Runtime.Intrinsics.Arm;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using static NoDriver.Cdp.Runtime;
 
 namespace NoDriver.Core.Runtime
 {
@@ -201,28 +205,30 @@ namespace NoDriver.Core.Runtime
             return this;
         }
 
-        public async Task ClickAsync()
+        //ok
+        public async Task ClickAsync(CancellationToken token = default)
         {
-            _remoteObject = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId));
-            var arguments = new List<CallArgument>
+            var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
+            _remoteObject = result.Object;
+
+            var arguments = new List<Cdp.Runtime.CallArgument>
             {
-                new CallArgument { ObjectId = _remoteObject.ObjectId }
+                new Cdp.Runtime.CallArgument { ObjectId = _remoteObject.ObjectId }
             };
 
-            await FlashAsync(0.25);
-            await _tab.SendAsync(CallFunctionOn(
+            await FlashAsync(0.25, token);
+            await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
                 "(el) => el.click()",
-                objectId: _remoteObject.ObjectId,
-                arguments: arguments,
-                awaitPromise: true,
-                userGesture: true,
-                returnByValue: true
-            ));
+                ObjectId: _remoteObject.ObjectId,
+                Arguments: arguments,
+                AwaitPromise: true,
+                UserGesture: true,
+                ReturnByValue: true), token: token);
         }
 
-        public async Task<Dictionary<string, object>> GetJsAttributesAsync()
+        public async Task<JsonNode?> GetJsAttributesAsync()
         {
-            var jsonStr = (string)await ApplyAsync(@"
+            var (remoteObj, exception) = await ApplyAsync(@"
                 function (e) {
                     let o = {}
                     for(let k in e){
@@ -230,37 +236,27 @@ namespace NoDriver.Core.Runtime
                     }
                     return JSON.stringify(o)
                 }");
-            return JsonSerializer.Deserialize<Dictionary<string, object>>(jsonStr);
+            return remoteObj.Value;
+            //return JsonSerializer.Deserialize<Dictionary<string, object>>(jsonStr);
         }
 
-        public async Task<object> ApplyAsync(string jsFunction, bool returnByValue = true)
+        //ok
+        public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> ApplyAsync(string jsFunction, bool returnByValue = true, CancellationToken token = default)
         {
-            _remoteObject = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId));
-            var result = await _tab.SendAsync(CallFunctionOn(
+            var resolveResult = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
+            _remoteObject = resolveResult.Object;
+
+            var result = await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
                 jsFunction,
-                objectId: _remoteObject.ObjectId,
-                arguments: new List<CallArgument>
+                ObjectId: _remoteObject.ObjectId,
+                Arguments: new List<Cdp.Runtime.CallArgument>
                 {
-                    new CallArgument { ObjectId = _remoteObject.ObjectId }
+                    new Cdp.Runtime.CallArgument { ObjectId = _remoteObject.ObjectId }
                 },
-                returnByValue: true,
-                userGesture: true
-            ));
+                ReturnByValue: true,
+                UserGesture: true), token: token);
 
-            if (result != null && result.Result != null)
-            {
-                if (returnByValue)
-                    return result.Result.Value;
-                return result.Result;
-            }
-            return result?.ExceptionDetails;
-
-            //if result and result[0]:
-            //    if return_by_value:
-            //        return result[0].value
-            //    return result[0]
-            //elif result[1]:
-            //    return result[1]
+            return (result.Result, result.ExceptionDetails);
         }
 
         //ok 要檢查 value 是不是有正確轉換
@@ -386,15 +382,16 @@ namespace NoDriver.Core.Runtime
 
         public async Task ClearInputAsync()
         {
-            await ApplyAsync("function (element) { element.value = \"\" } ");
+            await ApplyAsync(@"function (element) { element.value = """" } ");
         }
 
-        public async Task SendKeysAsync(string text)
+        //ok
+        public async Task SendKeysAsync(string text, CancellationToken token = default)
         {
-            await ApplyAsync("(elem) => elem.focus()");
-            foreach (var ch in text)
+            await ApplyAsync("(elem) => elem.focus()", token: token);
+            foreach (var c in text)
             {
-                await _tab.SendAsync(Cdp.Input.DispatchKeyEvent("char", text: ch.ToString()));
+                await _tab.SendAsync(Cdp.Input.DispatchKeyEvent("char", Text: c.ToString()), token: token);
             }
         }
 
@@ -682,10 +679,21 @@ namespace NoDriver.Core.Runtime
             await _tab;
         }
 
-        public async Task<bool> IsRecordingAsync()
+        //ok 要檢查 value 是不是有正確轉換
+        public async Task<bool> IsRecordingAsync(CancellationToken token = default)
         {
-            var result = await ApplyAsync(@"(vid) => vid[""_recording""]");
-            return result is bool b && b;
+            var (remoteObj, exception) = await ApplyAsync(@"(vid) => vid[""_recording""]", token: token);
+
+            var value = remoteObj?.Value?.ToString();
+
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                if (bool.TryParse(value, out var isRecording))
+                {
+                    return isRecording;
+                }
+            }
+            return false;
         }
 
         private void MakeAttrs()

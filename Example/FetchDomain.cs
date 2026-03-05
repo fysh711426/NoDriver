@@ -15,7 +15,7 @@ namespace Example
                     await browser.GetAsync("https://www.google.com", newWindow: true);
                 }
 
-                AsyncDomainEventHandler<Cdp.Fetch.RequestPaused> requestHandler = async (e, conn) =>
+                async Task requestHandler(Cdp.Fetch.RequestPaused e, Connection conn)
                 {
                     if (conn is Tab tab)
                     {
@@ -30,7 +30,7 @@ namespace Example
                 foreach (var tab in browser.Tabs)
                 {
                     Console.WriteLine(tab.ToString());
-                    tab.AddHandler(requestHandler);
+                    tab.AddHandler<Cdp.Fetch.RequestPaused>(requestHandler);
                     await tab.SendAsync(Cdp.Fetch.Enable());
                 }
 

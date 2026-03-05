@@ -1,5 +1,4 @@
-﻿using NoDriver.Cdp;
-using NoDriver.Core.Messaging;
+﻿using NoDriver.Core.Messaging;
 using System.Diagnostics;
 using System.Drawing;
 using System.Text.Json.Nodes;
@@ -77,36 +76,38 @@ namespace NoDriver.Core.Runtime
             _prepExpertDone = true;
         }
 
-        public async Task<Element> FindAsync(string text, bool bestMatch = true, bool returnEnclosingElement = true, double timeout = 10)
+        //ok
+        public async Task<Element?> FindAsync(string text, bool bestMatch = true, bool returnEnclosingElement = true, double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
             text = text.Trim();
 
-            var item = await FindElementByTextAsync(text, bestMatch, returnEnclosingElement);
+            var item = await FindElementByTextAsync(text, bestMatch, returnEnclosingElement, token: token);
             while (item == null)
             {
-                await WaitAsync();
-                item = await FindElementByTextAsync(text, bestMatch, returnEnclosingElement);
+                await WaitAsync(token: token);
+                item = await FindElementByTextAsync(text, bestMatch, returnEnclosingElement, token: token);
                 if (sw.Elapsed.TotalSeconds > timeout)
                     return item;
-                await SleepAsync(0.5);
+                await WaitAsync(0.5, token: token);
             }
             return item;
         }
 
-        public async Task<Element> SelectAsync(string selector, double timeout = 10)
+        //ok
+        public async Task<Element?> SelectAsync(string selector, double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
             selector = selector.Trim();
 
-            var item = await QuerySelectorAsync(selector);
+            var item = await QuerySelectorAsync(selector, token: token);
             while (item == null)
             {
-                await WaitAsync();
-                item = await QuerySelectorAsync(selector);
+                await WaitAsync(token: token);
+                item = await QuerySelectorAsync(selector, token: token);
                 if (sw.Elapsed.TotalSeconds > timeout)
                     return item;
-                await SleepAsync(0.5);
+                await WaitAsync(0.5, token: token);
             }
             return item;
         }
@@ -277,41 +278,42 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        public async Task<Element> QuerySelectorAsync(string selector, Node _node = null)
+        public async Task<Element> QuerySelectorAsync(string selector, Cdp.DOM.Node? node = null)
         {
             selector = selector.Trim();
 
-            var doc = null as Node;
-            if (_node == null)
+            var doc = null as Cdp.DOM.Node;
+            if (node == null)
             {
-                doc = await SendAsync(GetDocument(-1, true));
+                var result = await SendAsync(Cdp.DOM.GetDocument(-1, true));
+                doc = result.Root;
             }
             else
             {
-                doc = _node;
-                if (_node.NodeName == "IFRAME")
-                    doc = _node.ContentDocument;
+                doc = node;
+                if (node.NodeName == "IFRAME")
+                    doc = node.ContentDocument;
             }
 
             int? nodeId = null;
             try
             {
-                nodeId = await SendAsync(QuerySelector(doc.NodeId, selector));
+                nodeId = await SendAsync(QuerySelectorAsync(doc.NodeId, selector));
             }
             catch (ProtocolErrorException ex)
             {
-                if (_node != null)
+                if (node != null)
                 {
                     if (ex.Message.ToLowerInvariant().Contains("could not find node"))
                     {
-                        if (_node.GetMetadata("__last") != null)
+                        if (node.GetMetadata("__last") != null)
                         {
-                            _node.RemoveMetadata("__last");
+                            node.RemoveMetadata("__last");
                             return null;
                         }
-                        await _node.UpdateAsync();
-                        _node.SetMetadata("__last", true);
-                        return await QuerySelectorAsync(selector, _node);
+                        await node.UpdateAsync();
+                        node.SetMetadata("__last", true);
+                        return await QuerySelectorAsync(selector, node);
                     }
                 }
                 else
@@ -324,10 +326,10 @@ namespace NoDriver.Core.Runtime
             if (nodeId == null) 
                 return null;
 
-            var node = Util.FilterRecurse(doc, n => n.NodeId == nodeId);
-            if (node == null) 
+            var _node = Util.FilterRecurse(doc, n => n.NodeId == nodeId);
+            if (_node == null)
                 return null;
-            return Element.Create(node, this, doc);
+            return Element.Create(_node, this, doc);
         }
 
         public async Task<List<Element>> FindElementsByTextAsync(string text, string? tagHint = null)
@@ -397,7 +399,7 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        public async Task<Element> FindElementByTextAsync(string text, bool bestMatch = false, bool returnEnclosingElement = true)
+        public async Task<Element?> FindElementByTextAsync(string text, bool bestMatch = false, bool returnEnclosingElement = true)
         {
             var items = await FindElementsByTextAsync(text);
             if (items == null || items.Count == 0) return null;
@@ -414,9 +416,10 @@ namespace NoDriver.Core.Runtime
             //這裡感覺可能有 null 需要另外處理 ??
         }
 
-        public async Task BackAsync()
+        //ok
+        public async Task BackAsync(CancellationToken token = default)
         {
-            await SendAsync(Cdp.Runtime.Evaluate("window.history.back()"));
+            await SendAsync(Cdp.Runtime.Evaluate("window.history.back()"), token: token);
         }
 
         public async Task ForwardAsync() 
