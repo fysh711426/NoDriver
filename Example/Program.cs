@@ -4,6 +4,7 @@
     {
         public static async Task Main(string[] args)
         {
+            await SomeImpression.Main();
             //await Demo.Main();
             //await FetchDomain.Main();
             //await ImgurUploadImage.Main();

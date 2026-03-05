@@ -1,10 +1,7 @@
-﻿using NoDriver.Core.Messaging;
-using System;
+﻿using NoDriver.Cdp;
+using NoDriver.Core.Messaging;
 using System.Collections.Concurrent;
-using System.Runtime.Intrinsics.Arm;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using static NoDriver.Cdp.Runtime;
 
 namespace NoDriver.Core.Runtime
 {
@@ -461,43 +458,47 @@ namespace NoDriver.Core.Runtime
             return await _tab.QuerySelectorAsync(selector, this);
         }
 
-        public async Task<string> SaveScreenshotAsync(string filename = "auto", string format = "jpeg", double scale = 1)
+        //ok 檢查是否正常 Tab 也有相同函數
+        public async Task<string> SaveScreenshotAsync(string filename = "auto", string format = "jpeg", double scale = 1, CancellationToken token = default)
         {
-            var pos = await GetPositionAsync();
+            var pos = await GetPositionAsync(token: token);
             if (pos == null)
                 throw new InvalidOperationException("Could not determine position of element. Probably because it's not in view, or hidden.");
 
             var viewport = pos.ToViewport(scale);
-            await _tab.SleepAsync();
+            await _tab.WaitAsync(1, token: token);
 
             var path = "";
             if (string.IsNullOrWhiteSpace(filename) || filename == "auto")
             {
-                var uri = new Uri(_tab.Target.Url);
-                var lastPart = uri.AbsolutePath.Split('/').Last();
-                var index = lastPart.LastIndexOf('?');
-                if (index != -1)
-                    lastPart = lastPart.Substring(0, index);
-                var dtStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-                var candidate = $"{uri.Host}__{lastPart}_{dtStr}";
+                if (_tab.Target != null)
+                {
+                    var uri = new Uri(_tab.Target.Url);
+                    var lastPart = uri.AbsolutePath.Split('/').Last();
+                    var index = lastPart.LastIndexOf('?');
+                    if (index != -1)
+                        lastPart = lastPart.Substring(0, index);
+                    var dtStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                    var candidate = $"{uri.Host}__{lastPart}_{dtStr}";
 
-                var ext = "";
-                if (format.ToLowerInvariant() == "jpg" ||
-                    format.ToLowerInvariant() == "jpeg")
-                {
-                    ext = ".jpg";
-                    format = "jpeg";
+                    var ext = "";
+                    if (format.ToLowerInvariant() == "jpg" ||
+                        format.ToLowerInvariant() == "jpeg")
+                    {
+                        ext = ".jpg";
+                        format = "jpeg";
+                    }
+                    if (format.ToLowerInvariant() == "png")
+                    {
+                        ext = ".png";
+                        format = "png";
+                    }
+                    path = Path.Combine(Directory.GetCurrentDirectory(), $"{candidate}{ext}");
                 }
-                if (format.ToLowerInvariant() == "png")
-                {
-                    ext = ".png";
-                    format = "png";
-                }
-                path = candidate + ext;
             }
             else
             {
-                path = filename;
+                path = Path.Combine(Directory.GetCurrentDirectory(), filename);
             }
 
             if (string.IsNullOrWhiteSpace(path))
@@ -507,12 +508,14 @@ namespace NoDriver.Core.Runtime
             if (!string.IsNullOrWhiteSpace(parentDir))
                 Directory.CreateDirectory(parentDir);
 
-            var base64Data = await _tab.SendAsync(Cdp.Page.CaptureScreenshot(format, clip: viewport, captureBeyondViewport: true));
+            var result = await _tab.SendAsync(
+                Cdp.Page.CaptureScreenshot(format, Clip: viewport, CaptureBeyondViewport: true), token: token);
+            var base64Data = result.Data;
             if (string.IsNullOrWhiteSpace(base64Data))
-                throw new Exception("Could not take screenshot. most possible cause is the page has not finished loading yet.");
+                throw new InvalidOperationException("Could not take screenshot. most possible cause is the page has not finished loading yet.");
 
             var dataBytes = Convert.FromBase64String(base64Data);
-            await File.WriteAllBytesAsync(path, dataBytes);
+            await File.WriteAllBytesAsync(path, dataBytes, token);
             return path;
         }
 

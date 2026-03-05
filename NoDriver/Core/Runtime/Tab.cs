@@ -688,46 +688,59 @@ namespace NoDriver.Core.Runtime
             await WaitAsync(0.1);
         }
 
-        public async Task<string> SaveScreenshotAsync(string filename = "auto", string format = "jpeg", bool fullPage = false)
+        //ok
+        public async Task<string> SaveScreenshotAsync(string filename = "auto", string format = "jpeg", bool fullPage = false, CancellationToken token = default)
         {
-            await SleepAsync(); // update target URL
-
-            if (format.ToLowerInvariant() == "jpg" || format.ToLowerInvariant() == "jpeg") 
-                format = "jpeg";
-            else if (format.ToLowerInvariant() == "png") 
-                format = "png";
-
-            var ext = format == "jpeg" ? ".jpg" : ".png";
+            await WaitAsync(1, token: token);
 
             var path = "";
             if (string.IsNullOrWhiteSpace(filename) || filename == "auto")
             {
-                var uri = new Uri(Target.Url);
-                var lastPart = uri.AbsolutePath.Split('/').Last();
-                var index = lastPart.LastIndexOf('?');
-                if (index != -1)
-                    lastPart = lastPart.Substring(0, index);
-                var dtStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-                path = Path.Combine(Directory.GetCurrentDirectory(), $"{uri.Host}__{lastPart}_{dtStr}{ext}");
+                if (Target != null)
+                {
+                    var uri = new Uri(Target.Url);
+                    var lastPart = uri.AbsolutePath.Split('/').Last();
+                    var index = lastPart.LastIndexOf('?');
+                    if (index != -1)
+                        lastPart = lastPart.Substring(0, index);
+                    var dtStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                    var candidate = $"{uri.Host}__{lastPart}_{dtStr}";
+
+                    var ext = "";
+                    if (format.ToLowerInvariant() == "jpg" ||
+                        format.ToLowerInvariant() == "jpeg")
+                    {
+                        ext = ".jpg";
+                        format = "jpeg";
+                    }
+                    if (format.ToLowerInvariant() == "png")
+                    {
+                        ext = ".png";
+                        format = "png";
+                    }
+
+                    path = Path.Combine(Directory.GetCurrentDirectory(), $"{candidate}{ext}");
+                }
             }
             else
             {
-                path = filename;
+                path = Path.Combine(Directory.GetCurrentDirectory(), filename);
             }
 
             if (string.IsNullOrWhiteSpace(path))
                 throw new Exception($"Invalid filename or path: '{filename}'");
 
-            var base64Data = await SendAsync(Page.CaptureScreenshot(format, fullPage));
-            if (string.IsNullOrWhiteSpace(base64Data)) 
-                throw new ProtocolErrorException("Could not take screenshot. most possible cause is the page has not finished loading yet.");
-
             var parentDir = Path.GetDirectoryName(path);
             if (!string.IsNullOrWhiteSpace(parentDir))
                 Directory.CreateDirectory(parentDir);
 
+            var result = await SendAsync(Cdp.Page.CaptureScreenshot(format, CaptureBeyondViewport: fullPage), token: token);
+            var base64Data = result.Data;
+            if (string.IsNullOrWhiteSpace(base64Data))
+                throw new InvalidOperationException("Could not take screenshot. most possible cause is the page has not finished loading yet.");
+
             var dataBytes = Convert.FromBase64String(base64Data);
-            await File.WriteAllBytesAsync(path, dataBytes);
+            await File.WriteAllBytesAsync(path, dataBytes, token);
             return path;
         }
 
