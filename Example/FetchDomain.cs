@@ -1,5 +1,4 @@
-﻿using NoDriver.Core;
-using NoDriver.Core.Runtime;
+﻿using NoDriver.Core.Runtime;
 using Cdp = NoDriver.Cdp;
 
 namespace Example

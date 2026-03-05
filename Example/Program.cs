@@ -4,9 +4,13 @@
     {
         public static async Task Main(string[] args)
         {
-            //await FetchDomain.Main();
             //await Demo.Main();
-            await NetworkResponseBody.Main();
+            //await FetchDomain.Main();
+            //await ImgurUploadImage.Main();
+            //await MakeTwitterAccount.Main();
+            //await MouseDragBoxes.Main();
+            //await NetworkMonitor.Main();
+            //await NetworkResponseBody.Main();
         }
     }
 }

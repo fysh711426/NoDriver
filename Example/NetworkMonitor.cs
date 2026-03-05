@@ -60,7 +60,26 @@ namespace Example
                 await tab.WaitAsync();
                 await tab.BackAsync();
 
+                searchInp = await tab.SelectAsync("textarea");
+                if (searchInp != null)
+                {
+                    var text = "undetected nodriver";
+                    foreach (var letter in text)
+                    {
+                        await searchInp.ClearInputAsync();
+                        await searchInp.SendKeysAsync(
+                            text.Replace(letter.ToString(), letter.ToString().ToUpperInvariant()));
+                        await tab.WaitAsync(0.1);
+                    }
+                }
 
+                var allUrls = await tab.GetAllUrlsAsync();
+                foreach (var u in allUrls)
+                {
+                    Console.WriteLine($"Downloading {u}");
+                    await tab.DownloadFileAsync(u);
+                }
+                await tab.WaitAsync(10);
             }
         }
     }

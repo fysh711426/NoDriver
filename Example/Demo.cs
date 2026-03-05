@@ -31,7 +31,7 @@ namespace Example
             }
         }
 
-        public static async Task Run()
+        private static async Task Run()
         {
             var sdl = Sdl.GetApi();
             if (sdl.Init(Sdl.InitVideo) < 0)
@@ -113,7 +113,7 @@ namespace Example
                     tasks.Clear();
                     foreach (var tab in nowsecurePages)
                     {
-                        tasks.Add(MoveCircle(tab));
+                        tasks.Add(MouseMove(tab));
                     }
                     await Task.WhenAll(tasks);
                 }
@@ -173,7 +173,7 @@ namespace Example
             }
         }
 
-        public static async Task ScrollTask(Tab tab)
+        private static async Task ScrollTask(Tab tab)
         {
             await tab.ScrollUpAsync(200);
 
@@ -195,7 +195,7 @@ namespace Example
             }
         }
 
-        public static async Task MouseMove(Tab tab)
+        private static async Task MouseMove(Tab tab)
         {
             await tab.ActivateAsync();
             var boxes = await tab.SelectAllAsync(".box");
@@ -211,7 +211,7 @@ namespace Example
             }
         }
 
-        public static async Task MoveCircle(Tab tab, int x = 0)
+        private static async Task MoveCircle(Tab tab, int x = 0)
         {
             var result = await tab.GetWindowAsync();
             if (result == null)
@@ -247,7 +247,7 @@ namespace Example
             await tab.SetWindowSizeAsync(oldLeft, oldTop, oldWidth, oldHeight);
         }
 
-        public static async Task FlashSpans(Tab tab, int i)
+        private static async Task FlashSpans(Tab tab, int i)
         {
             Console.WriteLine($"Flashing spans. i={i} , tab={tab}, url={tab.Target?.Url ?? ""}");
 
