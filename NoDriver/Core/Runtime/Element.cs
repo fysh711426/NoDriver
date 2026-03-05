@@ -380,9 +380,10 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public async Task ClearInputAsync()
+        //ok
+        public async Task ClearInputAsync(CancellationToken token = default)
         {
-            await ApplyAsync(@"function (element) { element.value = """" } ");
+            await ApplyAsync(@"function (element) { element.value = """" } ", token: token);
         }
 
         //ok

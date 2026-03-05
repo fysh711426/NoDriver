@@ -770,10 +770,16 @@ namespace NoDriver.Core.Runtime
                                 continue;
 
                             var validStarts = new List<string> { "http", "//", "/" };
-                            if (!validStarts.Any(s => v.Contains(s)))
+                            if (!validStarts.Any(it => v.Contains(it)))
                                 continue;
 
-                            if (Uri.TryCreate(new Uri(Target.Url), v, out var absUri))
+                            if (Target == null)
+                                continue;
+
+                            var baseUri = new Uri(Target.Url);
+                            var baseUrl = $"{baseUri.Scheme}://{baseUri.Host}";
+
+                            if (Uri.TryCreate(new Uri(baseUrl), v, out var absUri))
                             {
                                 var absUrl = absUri.ToString();
                                 if (absUrl.StartsWith("http") || absUrl.StartsWith("//") || absUrl.StartsWith("ws"))
@@ -998,12 +1004,12 @@ namespace NoDriver.Core.Runtime
                     var currentY = stepSizeY * i;
                     if (flash) 
                         await FlashPointAsync(currentX, currentY, token: token);
-                    await SendAsync(Input.DispatchMouseEvent("mouseMoved", X: currentX, Y: currentY), token: token);
+                    await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: currentX, Y: currentY), token: token);
                 }
             }
             else
             {
-                await SendAsync(Input.DispatchMouseEvent("mouseMoved", X: x, Y: y), token: token);
+                await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: x, Y: y), token: token);
             }
 
             if (flash) 
@@ -1011,7 +1017,7 @@ namespace NoDriver.Core.Runtime
             else 
                 await WaitAsync(0.05, token: token);
 
-            await SendAsync(Input.DispatchMouseEvent("mouseReleased", X: x, Y: y), token: token);
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", X: x, Y: y), token: token);
             if (flash) 
                 await FlashPointAsync(x, y, token: token);
         }
