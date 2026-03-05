@@ -20,9 +20,6 @@
         public Position(List<double> points) :
             base(points)
         {
-            if (points == null || points.Count < 8)
-                throw new ArgumentException("Points array must contain at least 8 elements representing the quad.");
-
             Left = points[0];
             Top = points[1];
             Right = points[2];

@@ -164,7 +164,7 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public async Task<Element> UpdateAsync(Node node = null)
+        public async Task<Element> UpdateAsync(Cdp.DOM.Node node = null)
         {
             var doc = null as Node;
             if (node != null)
@@ -263,25 +263,43 @@ namespace NoDriver.Core.Runtime
             //    return result[1]
         }
 
-        public async Task<Position> GetPositionAsync(bool abs = false)
+        //ok 要檢查 value 是不是有正確轉換
+        public async Task<Position?> GetPositionAsync(bool abs = false, CancellationToken token = default)
         {
-            if (Parent == null || ObjectId == null)
+            if (Parent == null || _remoteObject?.ObjectId == null)
             {
-                _remoteObject = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId));
+                var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
+                _remoteObject = result.Object;
             }
 
             try
             {
-                var quads = await _tab.SendAsync(Cdp.DOM.GetContentQuads(_remoteObject.ObjectId));
+                var result = await _tab.SendAsync(Cdp.DOM.GetContentQuads(ObjectId: _remoteObject.ObjectId), token: token);
+                var quads = result.Quads;
                 if (quads == null || quads.Count == 0)
                     throw new Exception($"Could not find position for {this}");
 
                 var pos = new Position(quads[0]);
                 if (abs)
                 {
-                    // Assuming Tab.EvaluateAsync returns a convertible type
-                    var scrollY = Convert.ToDouble(await _tab.EvaluateAsync("window.scrollY"));
-                    var scrollX = Convert.ToDouble(await _tab.EvaluateAsync("window.scrollX"));
+                    async Task<double> getValue(string expression)
+                    {
+                        var (remoteObj, exception) = await _tab.EvaluateAsync(expression, token: token);
+
+                        var value = remoteObj?.Value?.ToString();
+
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            if (double.TryParse(value, out var result))
+                            {
+                                return result;
+                            }
+                        }
+                        return 0;
+                    }
+
+                    var scrollY = await getValue("window.scrollY");
+                    var scrollX = await getValue("window.scrollX");
                     pos.AbsX = pos.Left + scrollX + pos.Width / 2.0;
                     pos.AbsY = pos.Top + scrollY + pos.Height / 2.0;
                 }
@@ -297,72 +315,60 @@ namespace NoDriver.Core.Runtime
         public async Task MouseClickAsync(string button = "left", int buttons = 1, int modifiers = 0)
         {
             var pos = await GetPositionAsync();
-
-            var center = pos?.Center;
-            if (center == null)
+            if (pos?.Center == null)
             {
                 Console.WriteLine($"Could not calculate box model for {this}");
                 return;
             }
 
-            Console.WriteLine($"Clicking on location {center.X}, {center.Y}");
+            Console.WriteLine($"Clicking on location {pos.Center.X}, {pos.Center.Y}");
 
             await _tab.MouseClickAsync(pos.Center.X, pos.Center.Y);
             await _tab.FlashPointAsync(pos.Center.X, pos.Center.Y);
         }
 
-        public async Task MouseMoveAsync()
+        //ok
+        public async Task MouseMoveAsync(CancellationToken token = default)
         {
-            var pos = await GetPositionAsync();
-
-            var center = pos?.Center;
-            if (center == null)
+            var pos = await GetPositionAsync(token: token);
+            if (pos?.Center == null)
             {
                 Console.WriteLine($"Did not find location for {this}");
                 return;
             }
 
-            Console.WriteLine($"Mouse move to location {center.X}, {center.Y} where {this} is located");
+            Console.WriteLine($"Mouse move to location {pos.Center.X}, {pos.Center.Y} where {this} is located");
 
-            await _tab.MouseMoveAsync(center.X, center.Y);
+            await _tab.MouseMoveAsync(pos.Center.X, pos.Center.Y, token: token);
         }
 
-        public async Task MouseDragAsync(object destination, bool relative = false, int steps = 1)
+        //ok
+        public async Task MouseDragAsync(Element destElement, int steps = 1, CancellationToken token = default)
         {
-            var startPos = await GetPositionAsync();
+            var endPos = await destElement.GetPositionAsync(token: token);
+            if (endPos?.Center == null)
+            {
+                Console.WriteLine($"Could not calculate box model for {destElement}");
+                return;
+            }
+            await MouseDragAsync(endPos.Center, false, steps, token);
+        }
 
-            var startPoint = startPos?.Center;
-            if (startPoint == null)
+        //ok
+        public async Task MouseDragAsync((double X, double Y) destPoint, bool relative = false, int steps = 1, CancellationToken token = default)
+        {
+            var startPos = await GetPositionAsync(token: token);
+            if (startPos?.Center == null)
             {
                 Console.WriteLine($"Could not calculate box model for {this}");
                 return;
             }
 
-            var endPoint = null as Position;
+            var endPoint = destPoint;
+            if (relative)
+                endPoint = (startPos.Center.X + destPoint.X, startPos.Center.Y + destPoint.Y);
 
-            if (destination is Element destElement)
-            {
-                var endPos = await destElement.GetPositionAsync();
-
-                endPoint = endPos?.Center;
-                if (endPoint == null)
-                {
-                    Console.WriteLine($"Could not calculate box model for {destElement}");
-                    return;
-                }
-            }
-            else if (destination is ValueTuple<double, double> coords)
-            {
-                if (relative)
-                {
-                    endPoint = (startPoint.X + coords.Item1, startPoint.Y + coords.Item2);
-                }
-                else
-                {
-                    endPoint = coords;
-                }
-            }
-            await _tab.MouseDragAsync(startPoint, endPoint, relative, steps);
+            await _tab.MouseDragAsync(startPos.Center, endPoint, false, steps, token);
         }
 
         //ok
@@ -512,13 +518,15 @@ namespace NoDriver.Core.Runtime
             return path;
         }
 
-        public async Task FlashAsync(double duration = 0.5)
+        //ok
+        public async Task FlashAsync(double duration = 0.5, CancellationToken token = default)
         {
             if (_remoteObject == null)
             {
                 try
                 {
-                    _remoteObject = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId));
+                    var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
+                    _remoteObject = result.Object;
                 }
                 catch (ProtocolErrorException)
                 {
@@ -529,7 +537,9 @@ namespace NoDriver.Core.Runtime
             var pos = null as Position;
             try
             {
-                pos = await GetPositionAsync();
+                pos = await GetPositionAsync(token: token);
+                if (pos?.Center == null)
+                    throw new InvalidOperationException();
             }
             catch
             {
@@ -574,17 +584,16 @@ namespace NoDriver.Core.Runtime
                 }
                 """;
 
-            var arguments = new List<CallArgument>
+            var arguments = new List<Cdp.Runtime.CallArgument>
             {
-                new CallArgument { ObjectId = _remoteObject.ObjectId }
+                new Cdp.Runtime.CallArgument { ObjectId = _remoteObject.ObjectId }
             };
-            await _tab.SendAsync(CallFunctionOn(
+            await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
                 script,
-                objectId: _remoteObject.ObjectId,
-                arguments: arguments,
-                awaitPromise: true,
-                userGesture: true
-            ));
+                ObjectId: _remoteObject.ObjectId,
+                Arguments: arguments,
+                AwaitPromise: true,
+                UserGesture: true), token: token);
         }
 
         private bool _isHighlighted = false;

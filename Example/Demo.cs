@@ -1,11 +1,7 @@
 ﻿using NoDriver.Core.Runtime;
 using Silk.NET.Maths;
 using Silk.NET.SDL;
-using System;
 using System.Diagnostics;
-using System.Drawing;
-using static NoDriver.Cdp.Browser;
-using Cdp = NoDriver.Cdp;
 
 namespace Example
 {
@@ -211,7 +207,7 @@ namespace Example
 
             foreach (var box in boxes)
             {
-                await box.MouseDragAsync([250, 250], relative: true);
+                await box.MouseDragAsync((250, 250), relative: true);
             }
         }
 

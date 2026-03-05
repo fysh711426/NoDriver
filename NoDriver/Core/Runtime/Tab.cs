@@ -1,11 +1,8 @@
 ﻿using NoDriver.Cdp;
 using NoDriver.Core.Messaging;
-using Silk.NET.Core.Native;
 using System.Diagnostics;
 using System.Drawing;
-using System.Net.Http.Headers;
-using System.Runtime.Intrinsics.Arm;
-using static NoDriver.Cdp.Browser;
+using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
 {
@@ -432,32 +429,27 @@ namespace NoDriver.Core.Runtime
             await SendAsync(Page.Reload(ignoreCache, scriptToEvaluateOnLoad));
         }
 
-        public async Task<(Cdp.Runtime.RemoteObject, Cdp.Runtime.ExceptionDetails)> EvaluateAsync(string expression, bool awaitPromise = false, bool returnByValue = false)
+        //ok
+        public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> EvaluateAsync(string expression, bool awaitPromise = false, bool returnByValue = false, CancellationToken token = default)
         {
-            var ser = new Cdp.Runtime.SerializationOptions("deep", 10, new Dictionary<string, object>
-            {
-                {"maxNodeDepth", 10}, {"includeShadowTree", "all"}
-            });
+            var ser = new Cdp.Runtime.SerializationOptions(
+                Serialization: "deep",
+                MaxDepth: 10,
+                AdditionalParameters: new JsonObject
+                {
+                    ["maxNodeDepth"] = 10,
+                    ["includeShadowTree"] = "all"
+                });
 
-            return await SendAsync(Cdp.Runtime.Evaluate(
-                expression,
-                userGesture: true,
-                awaitPromise: awaitPromise,
-                returnByValue: returnByValue,
-                allowUnsafeEvalBlockedByCsp: true,
-                serializationOptions: ser));
+            var result = await SendAsync(Cdp.Runtime.Evaluate(
+                Expression: expression,
+                UserGesture: true,
+                AwaitPromise: awaitPromise,
+                ReturnByValue: returnByValue,
+                AllowUnsafeEvalBlockedByCSP: true,
+                SerializationOptions: ser), token: token);
 
-            //if errors:
-            //    return errors
-            //if remote_object:
-            //    if return_by_value:
-            //        if remote_object.value:
-            //            return remote_object.value
-            //    else:
-            //        if remote_object.deep_serialized_value:
-            //            return remote_object.deep_serialized_value.value
-
-            //return remote_object
+            return (result.Result, result.ExceptionDetails);
         }
 
         public async Task<object> JsDumpsAsync(string objName, bool returnByValue = true)
@@ -989,7 +981,8 @@ namespace NoDriver.Core.Runtime
             await body.SendKeysAsync("thisisunsafe");
         }
 
-        public async Task MouseMoveAsync(double x, double y, int steps = 10, bool flash = false)
+        //ok
+        public async Task MouseMoveAsync(double x, double y, int steps = 10, bool flash = false, CancellationToken token = default)
         {
             steps = steps < 1 ? 1 : steps;
             if (steps > 1)
@@ -1001,34 +994,36 @@ namespace NoDriver.Core.Runtime
                     var currentX = stepSizeX * i;
                     var currentY = stepSizeY * i;
                     if (flash) 
-                        await FlashPointAsync(currentX, currentY);
-                    await SendAsync(Input.DispatchMouseEvent("mouseMoved", currentX, currentY));
+                        await FlashPointAsync(currentX, currentY, token: token);
+                    await SendAsync(Input.DispatchMouseEvent("mouseMoved", X: currentX, Y: currentY), token: token);
                 }
             }
             else
             {
-                await SendAsync(Input.DispatchMouseEvent("mouseMoved", x, y));
+                await SendAsync(Input.DispatchMouseEvent("mouseMoved", X: x, Y: y), token: token);
             }
 
             if (flash) 
-                await FlashPointAsync(x, y);
+                await FlashPointAsync(x, y, token: token);
             else 
-                await SleepAsync(0.05);
+                await WaitAsync(0.05, token: token);
 
-            await SendAsync(Input.DispatchMouseEvent("mouseReleased", x, y));
+            await SendAsync(Input.DispatchMouseEvent("mouseReleased", X: x, Y: y), token: token);
             if (flash) 
-                await FlashPointAsync(x, y);
+                await FlashPointAsync(x, y, token: token);
         }
 
-        public async Task<bool> ScrollBottomReachedAsync()
+        //ok 要檢查 value 是不是有正確轉換
+        public async Task<bool> ScrollBottomReachedAsync(CancellationToken token = default)
         {
-            var expression = "document.body.offsetHeight - window.innerHeight === window.scrollY";
+            var (remoteObj, exception) = await EvaluateAsync(
+                "document.body.offsetHeight - window.innerHeight == window.scrollY", token: token);
 
-            var (remoteObj, exception) = await EvaluateAsync(expression, returnByValue: true);
+            var value = remoteObj?.Value?.ToString();
 
-            if (remoteObj?.Value != null)
+            if (!string.IsNullOrWhiteSpace(value))
             {
-                if (bool.TryParse(remoteObj.Value.ToString(), out var isReached))
+                if (bool.TryParse(value, out var isReached))
                 {
                     return isReached;
                 }
@@ -1044,35 +1039,37 @@ namespace NoDriver.Core.Runtime
                 modifiers: modifiers, button: new Input.MouseButton(button), buttons: buttons, clickCount: 1));
         }
 
-        public async Task MouseDragAsync((double X, double Y) sourcePoint, (double X, double Y) destPoint, bool relative = false, int steps = 1)
+        //ok
+        public async Task MouseDragAsync((double X, double Y) sourcePoint, (double X, double Y) destPoint, bool relative = false, int steps = 1, CancellationToken token = default)
         {
-            if (relative) 
+            if (relative)
                 destPoint = (sourcePoint.X + destPoint.X, sourcePoint.Y + destPoint.Y);
 
-            await SendAsync(Input.DispatchMouseEvent("mousePressed", 
-                sourcePoint.X, sourcePoint.Y, new Input.MouseButton("left")));
+            await SendAsync(Input.DispatchMouseEvent("mousePressed",
+                X: sourcePoint.X, Y: sourcePoint.Y, Button: new Input.MouseButton("left")), token: token);
 
             steps = steps < 1 ? 1 : steps;
             if (steps == 1)
             {
-                await SendAsync(Input.DispatchMouseEvent("mouseMoved", destPoint.X, destPoint.Y));
+                await SendAsync(Input.DispatchMouseEvent("mouseMoved", X: destPoint.X, Y: destPoint.Y), token: token);
             }
             else
             {
                 var stepSizeX = (destPoint.X - sourcePoint.X) / steps;
                 var stepSizeY = (destPoint.Y - sourcePoint.Y) / steps;
-                for (var i = 0; i <= steps; i++)
+                for (var i = 0; i < steps + 1; i++)
                 {
-                    await SendAsync(Input.DispatchMouseEvent("mouseMoved", 
-                        sourcePoint.X + stepSizeX * i, sourcePoint.Y + stepSizeY * i));
+                    await SendAsync(Input.DispatchMouseEvent("mouseMoved",
+                        X: sourcePoint.X + stepSizeX * i, Y: sourcePoint.Y + stepSizeY * i), token: token);
                     await Task.Yield();
                 }
             }
-            await SendAsync(Input.DispatchMouseEvent("mouseReleased", 
-                destPoint.X, destPoint.Y, new Input.MouseButton("left")));
+            await SendAsync(Input.DispatchMouseEvent("mouseReleased",
+                X: destPoint.X, Y: destPoint.Y, Button: new Input.MouseButton("left")), token: token);
         }
 
-        public async Task FlashPointAsync(double x, double y, double duration = 0.5, int size = 10)
+        //ok
+        public async Task FlashPointAsync(double x, double y, double duration = 0.5, int size = 10, CancellationToken token = default)
         {
             var id = Guid.NewGuid().ToString("N").Substring(0, 16);
             var style =
@@ -1111,7 +1108,7 @@ namespace NoDriver.Core.Runtime
                 .Replace("  ", "")
                 .Replace("\n", "");
 
-            await SendAsync(Cdp.Runtime.Evaluate(script, awaitPromise: true, userGesture: true));
+            await SendAsync(Cdp.Runtime.Evaluate(script, AwaitPromise: true, UserGesture: true), token: token);
         }
 
         public bool Equals(Tab? other)
