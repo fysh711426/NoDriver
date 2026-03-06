@@ -427,9 +427,10 @@ namespace NoDriver.Core.Runtime
             await SendAsync(Cdp.Runtime.Evaluate("window.history.forward()"));
         }
 
-        public async Task ReloadAsync(bool ignoreCache = true, string? scriptToEvaluateOnLoad = null)
+        //ok
+        public async Task ReloadAsync(bool ignoreCache = true, string? scriptToEvaluateOnLoad = null, CancellationToken token = default)
         {
-            await SendAsync(Page.Reload(ignoreCache, scriptToEvaluateOnLoad));
+            await SendAsync(Cdp.Page.Reload(IgnoreCache: ignoreCache, ScriptToEvaluateOnLoad: scriptToEvaluateOnLoad), token: token);
         }
 
         //ok
@@ -498,10 +499,13 @@ namespace NoDriver.Core.Runtime
             return (result.WindowId, result.Bounds);
         }
 
-        public async Task<string> GetContentAsync()
+        //ok
+        public async Task<string> GetContentAsync(CancellationToken token = default)
         {
-            Node doc = await SendAsync(GetDocument(-1, true));
-            return await SendAsync(DOM.GetOuterHtml(doc.BackendNodeId));
+            var docResult = await SendAsync(Cdp.DOM.GetDocument(-1, true), token: token);
+            var doc = docResult.Root;
+            var result = await SendAsync(Cdp.DOM.GetOuterHTML(BackendNodeId: doc.BackendNodeId), token: token);
+            return result.OuterHTML;
         }
 
         //ok
@@ -541,9 +545,10 @@ namespace NoDriver.Core.Runtime
                 await SendAsync(Cdp.Target.ActivateTarget(Target.TargetId), token: token);
         }
 
-        public Task BringToFrontAsync()
+        //ok
+        public async Task BringToFrontAsync(CancellationToken token = default)
         {
-            await ActivateAsync();
+            await ActivateAsync(token);
         }
 
         //ok
