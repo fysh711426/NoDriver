@@ -423,11 +423,5 @@ namespace NoDriver.Core.Runtime
                 return Tabs[0];
             }
         }
-
-        // 提供 C# 中類似 await browser 的效果
-        //public System.Runtime.CompilerServices.TaskAwaiter GetAwaiter()
-        //{
-        //    return UpdateTargetsAsync().GetAwaiter();
-        //}
     }
 }

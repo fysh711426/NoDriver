@@ -40,23 +40,25 @@ namespace NoDriver.Core.Runtime
             return await SendOneshotAsync(command, token);
         }
 
+        //ok 要檢查 json 轉換有沒有成功
         private async Task PrepareHeadlessAsync(CancellationToken token = default)
         {
             if (_prepHeadlessDone) 
                 return;
 
             var response = await SendOneshotAsync(Cdp.Runtime.Evaluate("navigator.userAgent"), token);
-            if (response == null) return;
+            if (response == null) 
+                return;
 
-            var (response, error) = resp;
-            if (response?.Value != null)
+            if (response?.Result?.Value != null)
             {
-                string ua = response.Value.ToString();
-                await SendOneshotAsync(Network.SetUserAgentOverride(ua.Replace("Headless", "")), token);
+                var ua = response.Result.Value.ToString();
+                await SendOneshotAsync(Cdp.Network.SetUserAgentOverride(UserAgent: ua.Replace("Headless", "")), token);
             }
             _prepHeadlessDone = true;
         }
 
+        // ok 要測試
         private async Task PrepareExpertAsync(CancellationToken token = default)
         {
             if (_prepExpertDone) 
@@ -64,14 +66,16 @@ namespace NoDriver.Core.Runtime
 
             if (Browser != null)
             {
-                await SendOneshotAsync(Page.Enable(), token);
-                await SendOneshotAsync(Page.AddScriptToEvaluateOnNewDocument(@"
-                    console.log('hooking attachShadow');
-                    Element.prototype._attachShadow = Element.prototype.attachShadow;
-                    Element.prototype.attachShadow = function () {
-                        console.log('calling hooked attachShadow')
-                        return this._attachShadow( { mode: 'open' } );
-                    };"), token);
+                await SendOneshotAsync(Cdp.Page.Enable(), token);
+                await SendOneshotAsync(Cdp.Page.AddScriptToEvaluateOnNewDocument(
+                    $$"""
+                        console.log('hooking attachShadow');
+                        Element.prototype._attachShadow = Element.prototype.attachShadow;
+                        Element.prototype.attachShadow = function () {
+                            console.log('calling hooked attachShadow')
+                            return this._attachShadow( { mode: 'open' } );
+                        };
+                    """), token);
             }
             _prepExpertDone = true;
         }
@@ -112,19 +116,20 @@ namespace NoDriver.Core.Runtime
             return item;
         }
 
-        public async Task<List<Element>> FindAllAsync(string text, double timeout = 10)
+        // ok 要測試
+        public async Task<List<Element>> FindAllAsync(string text, double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
             text = text.Trim();
 
-            var items = await FindElementsByTextAsync(text);
+            var items = await FindElementsByTextAsync(text, token: token);
             while (items == null || items.Count == 0)
             {
-                await WaitAsync();
-                items = await FindElementsByTextAsync(text);
+                await WaitAsync(token: token);
+                items = await FindElementsByTextAsync(text, token: token);
                 if (sw.Elapsed.TotalSeconds > timeout)
                     return items;
-                await SleepAsync(0.5);
+                await WaitAsync(0.5, token);
             }
             return items;
         }
@@ -168,20 +173,21 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public async Task<List<Element>> XPathAsync(string xpath, double timeout = 2.5)
+        // ok 要測試
+        public async Task<List<Element>> XPathAsync(string xpath, double timeout = 2.5, CancellationToken token = default)
         {
             var items = new List<Element>();
             try
             {
-                await SendAsync(Enable(), true);
-                items = await FindAllAsync(xpath, timeout: 0);
+                await SendAsync(Cdp.DOM.Enable(), true, token: token);
+                items = await FindAllAsync(xpath, timeout: 0, token: token);
                 if (items.Count == 0)
                 {
                     var sw = Stopwatch.StartNew();
                     while (items.Count == 0)
                     {
-                        items = await FindAllAsync(xpath, timeout: 0);
-                        await SleepAsync(0.1);
+                        items = await FindAllAsync(xpath, timeout: 0, token: token);
+                        await WaitAsync(0.1, token);
                         if (sw.Elapsed.TotalSeconds > timeout)
                             break;
                     }
@@ -191,7 +197,7 @@ namespace NoDriver.Core.Runtime
             {
                 try
                 {
-                    await SendAsync(Disable(), true);
+                    await SendAsync(Cdp.DOM.Disable(), true, token: token);
                 }
                 catch (ProtocolErrorException) { }
             }
@@ -278,7 +284,7 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        public async Task<Element> QuerySelectorAsync(string selector, Cdp.DOM.Node? node = null)
+        public async Task<Element?> QuerySelectorAsync(string selector, Cdp.DOM.Node? node = null)
         {
             selector = selector.Trim();
 
@@ -422,9 +428,10 @@ namespace NoDriver.Core.Runtime
             await SendAsync(Cdp.Runtime.Evaluate("window.history.back()"), token: token);
         }
 
-        public async Task ForwardAsync() 
+        // ok 要測試
+        public async Task ForwardAsync(CancellationToken token = default) 
         {
-            await SendAsync(Cdp.Runtime.Evaluate("window.history.forward()"));
+            await SendAsync(Cdp.Runtime.Evaluate("window.history.forward()"), token: token);
         }
 
         //ok
@@ -458,14 +465,16 @@ namespace NoDriver.Core.Runtime
 
         public async Task<object> JsDumpsAsync(string objName, bool returnByValue = true)
         {
-            string jsCodeA = $$"""
-                function ___dump(obj, _d = 0) { ... } // (JS snippet truncated for brevity)
-                ___dumpY({{objName}})
-            """;
+            string jsCodeA = 
+                $$"""
+                    function ___dump(obj, _d = 0) { ... } // (JS snippet truncated for brevity)
+                    ___dumpY({{objName}})
+                """;
 
-            string jsCodeB = $$"""
-                ((obj, visited = new WeakSet()) => { ... })({{objName}})
-            """;
+            string jsCodeB = 
+                $$"""
+                    ((obj, visited = new WeakSet()) => { ... })({{objName}})
+                """;
 
             var (remoteObject, exceptionDetails) = 
                 await SendAsync(Cdp.Runtime.Evaluate(jsCodeA, awaitPromise: true, returnByValue: returnByValue, allowUnsafeEvalBlockedByCsp: true));
@@ -615,82 +624,89 @@ namespace NoDriver.Core.Runtime
                 Speed: 7777), token: token);
         }
 
-        public async Task<Element?> WaitForAsync(string selector = "", string text = "", double timeout = 10)
+        public async Task<Element?> WaitForAsync(string selector = "", string text = "", double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
             if (!string.IsNullOrWhiteSpace(selector))
             {
-                var item = await QuerySelectorAsync(selector);
+                var item = await QuerySelectorAsync(selector, token: token);
                 while (item == null)
                 {
-                    item = await QuerySelectorAsync(selector);
+                    item = await QuerySelectorAsync(selector, token: token);
 
                     if (sw.Elapsed.TotalSeconds > timeout) 
                         throw new TimeoutException($"Time ran out while waiting for {selector}");
-                    await SleepAsync(0.5);
+                    await WaitAsync(0.5, token);
                 }
                 return item;
             }
             if (!string.IsNullOrWhiteSpace(text))
             {
-                var item = await FindElementByTextAsync(text);
+                var item = await FindElementByTextAsync(text, token: token);
                 while (item == null)
                 {
-                    item = await FindElementByTextAsync(text);
+                    item = await FindElementByTextAsync(text, token: token);
 
                     if (sw.Elapsed.TotalSeconds > timeout) 
                         throw new TimeoutException($"Time ran out while waiting for text: {text}");
-                    await SleepAsync(0.5);
+                    await WaitAsync(0.5, token);
                 }
                 return item;
             }
             return null;
         }
 
-        public async Task DownloadFileAsync(string url, string? filename = null)
+        //ok 要檢查下載是不是正確
+        public async Task DownloadFileAsync(string url, string? filename = null, CancellationToken token = default)
         {
             if (_downloadBehavior == null)
             {
                 var dirPath = Path.Combine(Directory.GetCurrentDirectory(), "downloads");
                 Directory.CreateDirectory(dirPath);
-                await SetDownloadPathAsync(dirPath);
+                await SetDownloadPathAsync(dirPath, token);
                 Console.WriteLine($"No download path set, using default: {dirPath}");
             }
 
             if (string.IsNullOrWhiteSpace(filename))
                 filename = url.Split('/').Last().Split('?').First();
 
-            var code = $$"""
-                (elem) => {
-                    async function _downloadFile(
-                      imageSrc,
-                      nameOfDownload,
-                    ) {
-                      const response = await fetch(imageSrc);
-                      const blobImage = await response.blob();
-                      const href = URL.createObjectURL(blobImage);
+            var code = 
+                $$"""
+                    (elem) => {
+                        async function _downloadFile(
+                          imageSrc,
+                          nameOfDownload,
+                        ) {
+                          const response = await fetch(imageSrc);
+                          const blobImage = await response.blob();
+                          const href = URL.createObjectURL(blobImage);
 
-                      const anchorElement = document.createElement('a');
-                      anchorElement.href = href;
-                      anchorElement.download = nameOfDownload;
+                          const anchorElement = document.createElement('a');
+                          anchorElement.href = href;
+                          anchorElement.download = nameOfDownload;
 
-                      document.body.appendChild(anchorElement);
-                      anchorElement.click();
+                          document.body.appendChild(anchorElement);
+                          anchorElement.click();
 
-                      setTimeout(() => {
-                        document.body.removeChild(anchorElement);
-                        window.URL.revokeObjectURL(href);
-                        }, 500);
+                          setTimeout(() => {
+                            document.body.removeChild(anchorElement);
+                            window.URL.revokeObjectURL(href);
+                            }, 500);
+                        }
+                        _downloadFile('{{url}}', '{{filename}}')
                     }
-                    _downloadFile('{{url}}', '{{filename}}')
-                    }
-            """;
+                """;
 
-            var body = (await QuerySelectorAllAsync("body")).First();
-            await body.UpdateAsync();
-            await SendAsync(Cdp.Runtime.CallFunctionOn(code, body.ObjectId, 
-                new List<Cdp.Runtime.CallArgument> { new Cdp.Runtime.CallArgument(body.ObjectId) }));
-            await WaitAsync(0.1);
+            var result = await QuerySelectorAllAsync("body", token: token);
+            var body = result.First();
+            await body.UpdateAsync(token: token);
+            await SendAsync(Cdp.Runtime.CallFunctionOn(code, 
+                ObjectId: body.ObjectId, 
+                Arguments: new List<Cdp.Runtime.CallArgument> 
+                { 
+                    new Cdp.Runtime.CallArgument(ObjectId: body.ObjectId) 
+                }), token: token);
+            await WaitAsync(0.1, token);
         }
 
         //ok
@@ -749,11 +765,12 @@ namespace NoDriver.Core.Runtime
             return path;
         }
 
-        public async Task SetDownloadPathAsync(string path)
+        //ok 要測試
+        public async Task SetDownloadPathAsync(string path, CancellationToken token = default)
         {
             var fullPath = Path.GetFullPath(path);
             Directory.CreateDirectory(fullPath);
-            await SendAsync(Cdp.Browser.SetDownloadBehavior("allow", fullPath));
+            await SendAsync(Cdp.Browser.SetDownloadBehavior(Behavior: "allow", DownloadPath: fullPath), token: token);
             _downloadBehavior = new List<string> { "allow", fullPath };
         }
 
@@ -812,64 +829,56 @@ namespace NoDriver.Core.Runtime
             return res;
         }
 
-        public async Task<Dictionary<string, string>> GetLocalStorageAsync()
+        //ok 要檢查 json 有沒有轉換成功
+        public async Task<Dictionary<string, string>> GetLocalStorageAsync(CancellationToken token = default)
         {
-            if (string.IsNullOrWhiteSpace(Target.Url))
-            {
-                await WaitAsync();
-            }
+            if (string.IsNullOrWhiteSpace(Target?.Url))
+                await WaitAsync(token: token);
 
-            var origin = new Uri(Target.Url).GetLeftPart(UriPartial.Authority);
+            var origin = new Uri(Target?.Url ?? "").GetLeftPart(UriPartial.Authority);
 
-            var storageId = new DOMStorage.StorageId 
-            { 
-                IsLocalStorage = true, 
-                SecurityOrigin = origin 
-            };
-            var items = await SendAsync(DOMStorage.GetDOMStorageItems(storageId));
+            var result = await SendAsync(Cdp.DOMStorage.GetDOMStorageItems(
+                new Cdp.DOMStorage.StorageId(IsLocalStorage: true, SecurityOrigin: origin)), token: token);
 
             var retval = new Dictionary<string, string>();
-            foreach (var item in items)
+            foreach (var item in result.Entries)
             {
-                if (item != null && item.Count >= 2)
+                var items = item.Items?.ToList();
+                if (items != null && items.Count >= 2)
                 {
-                    retval[item[0]] = item[1];
+                    retval[items[0]] = items[1];
                 }
             }
             return retval;
         }
 
-        public async Task SetLocalStorageAsync(Dictionary<string, object> items)
+        //ok 要測試
+        public async Task SetLocalStorageAsync(Dictionary<string, string> items, CancellationToken token = default)
         {
-            if (string.IsNullOrWhiteSpace(Target.Url))
+            if (string.IsNullOrWhiteSpace(Target?.Url))
+                await WaitAsync(token: token);
+
+            if (items?.Count > 0)
             {
-                await WaitAsync();
+                var origin = new Uri(Target?.Url ?? "").GetLeftPart(UriPartial.Authority);
+
+                var tasks = items.Select(kvp =>
+                    SendAsync(Cdp.DOMStorage.SetDOMStorageItem(
+                        new Cdp.DOMStorage.StorageId(IsLocalStorage: true, SecurityOrigin: origin),
+                        kvp.Key, kvp.Value), token: token));
+
+                await Task.WhenAll(tasks);
             }
-
-            var origin = new Uri(Target.Url).GetLeftPart(UriPartial.Authority);
-
-            var storageId = new DOMStorage.StorageId
-            {
-                SecurityOrigin = origin,
-                IsLocalStorage = true
-            };
-
-            var tasks = items.Select(kvp =>
-                SendAsync(DOMStorage.SetDOMStorageItem(
-                    storageId,
-                    kvp.Key,
-                    kvp.Value
-                ))
-            );
-            await Task.WhenAll(tasks);
         }
 
-        public async Task<Page.FrameTree> GetFrameTreeAsync()
+        //ok 要測試
+        public async Task<Cdp.Page.FrameTree> GetFrameTreeAsync(CancellationToken token = default)
         {
-            return await SendAsync(Page.GetFrameTree());
+            var result = await SendAsync(Cdp.Page.GetFrameTree(), token: token);
+            return result.FrameTree;
         }
 
-        public async Task<Page.FrameResourceTree> GetFrameResourceTreeAsync()
+        public async Task<Cdp.Page.FrameResourceTree> GetFrameResourceTreeAsync()
         {
             return await SendAsync(Page.GetResourceTree());
         }
@@ -900,7 +909,7 @@ namespace NoDriver.Core.Runtime
         {
             try
             {
-                await SendOneshotAsync(Page.Enable());
+                await SendOneshotAsync(Cdp.Page.Enable());
 
                 var tree = await GetFrameResourceTreeAsync();
                 var listOfTuples = Util.FlattenFrameTreeResources(tree);
@@ -914,7 +923,7 @@ namespace NoDriver.Core.Runtime
                     if (frame == null || resource == null) 
                         continue;
 
-                    var res = await SendAsync(Page.SearchInResource(frame.Id, resource.Url, query));
+                    var res = await SendAsync(Cdp.Page.SearchInResource(frame.Id, resource.Url, query));
                     if (res != null && res.Count > 0)
                     {
                         results[resource.Url] = res;
@@ -924,7 +933,7 @@ namespace NoDriver.Core.Runtime
             }
             finally
             {
-                await SendOneshotAsync(Page.Disable());
+                await SendOneshotAsync(Cdp.Page.Disable());
             }
         }
 
@@ -950,7 +959,7 @@ namespace NoDriver.Core.Runtime
             {
                 if (!string.IsNullOrWhiteSpace(templateImage))
                     if (!File.Exists(templateImage))
-                    throw new FileNotFoundException($"{templateImage} was not found.");
+                        throw new FileNotFoundException($"{templateImage} was not found.");
 
                 await SaveScreenshotAsync(screenPath);
                 await SleepAsync(0.05);
@@ -992,11 +1001,11 @@ namespace NoDriver.Core.Runtime
             }
             finally
             {
-                if (File.Exists(screenPath)) 
+                if (File.Exists(screenPath))
                     File.Delete(screenPath);
                 if (string.IsNullOrWhiteSpace(templateImage))
                 {
-                    if(File.Exists(cfTemplatePath))
+                    if (File.Exists(cfTemplatePath))
                         File.Delete(cfTemplatePath);
                 }
             }
@@ -1058,12 +1067,13 @@ namespace NoDriver.Core.Runtime
             return false;
         }
 
-        public async Task MouseClickAsync(double x, double y, string button = "left", int buttons = 1, int modifiers = 0)
+        //ok 要測試
+        public async Task MouseClickAsync(double x, double y, string button = "left", int buttons = 1, int modifiers = 0, CancellationToken token = default)
         {
-            await SendAsync(Input.DispatchMouseEvent("mousePressed", x, y,
-                modifiers: modifiers, button: new Input.MouseButton(button), buttons: buttons, clickCount: 1));
-            await SendAsync(Input.DispatchMouseEvent("mouseReleased", x, y,
-                modifiers: modifiers, button: new Input.MouseButton(button), buttons: buttons, clickCount: 1));
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed", x, y,
+                Modifiers: modifiers, Button: new Cdp.Input.MouseButton(button), Buttons: buttons, ClickCount: 1), token: token);
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", x, y,
+                Modifiers: modifiers, Button: new Cdp.Input.MouseButton(button), Buttons: buttons, ClickCount: 1), token: token);
         }
 
         //ok

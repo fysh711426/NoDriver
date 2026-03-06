@@ -1,5 +1,4 @@
-﻿using NoDriver.Cdp;
-using NoDriver.Core.Messaging;
+﻿using NoDriver.Core.Messaging;
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 
@@ -119,7 +118,7 @@ namespace NoDriver.Core.Runtime
             }
         }
         public Cdp.Runtime.RemoteObject? RemoteObject => _remoteObject;
-        public Cdp.Runtime.RemoteObjectId? ObjectScsid => RemoteObject?.ObjectId;
+        public Cdp.Runtime.RemoteObjectId? ObjectId => RemoteObject?.ObjectId;
         public string Text
         {
             get
@@ -148,36 +147,34 @@ namespace NoDriver.Core.Runtime
             MakeAttrs();
         }
 
-        public async Task SaveToDomAsync()
+        //ok 要測試
+        public async Task SaveToDomAsync(CancellationToken token = default)
         {
-            _remoteObject = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId));
-            await _tab.SendAsync(Cdp.DOM.SetOuterHtml(NodeId, ToString()));
-            await UpdateAsync();
+            var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
+            _remoteObject = result.Object;
+            await _tab.SendAsync(Cdp.DOM.SetOuterHTML(NodeId: NodeId, OuterHTML: $"{this}"), token: token);
+            await UpdateAsync(token: token);
         }
 
-        public async Task RemoveFromDomAsync()
+        //ok 要測試
+        public async Task RemoveFromDomAsync(CancellationToken token = default)
         {
-            await UpdateAsync();
+            await UpdateAsync(token: token);
             var node = Util.FilterRecurse(_tree, n => n.BackendNodeId == BackendNodeId);
             if (node != null)
-            {
-                await Tab.SendAsync(Cdp.DOM.RemoveNode(node.NodeId));
-            }
+                await Tab.SendAsync(Cdp.DOM.RemoveNode(NodeId: node.NodeId), token: token);
         }
 
-        public async Task<Element> UpdateAsync(Cdp.DOM.Node node = null)
+        //ok
+        public async Task<Element> UpdateAsync(Cdp.DOM.Node? node = null, CancellationToken token = default)
         {
-            var doc = null as Node;
-            if (node != null)
+            var doc = node;
+            if (doc == null)
             {
-                doc = node;
-                _parent = null;
+                var docResult = await _tab.SendAsync(Cdp.DOM.GetDocument(-1, true), token: token);
+                doc = docResult.Root;
             }
-            else
-            {
-                doc = await _tab.SendAsync(GetDocument(-1, true));
-                _parent = null;
-            }
+            _parent = null;
 
             var updatedNode = Util.FilterRecurse(doc, n => n.BackendNodeId == _node.BackendNodeId);
             if (updatedNode != null)
@@ -187,7 +184,8 @@ namespace NoDriver.Core.Runtime
             }
             _tree = doc;
 
-            _remoteObject = await _tab.SendAsync(Cdp.DOM.ResolveNode(_node.BackendNodeId));
+            var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: _node.BackendNodeId), token: token);
+            _remoteObject = result.Object;
             _attrs.Clear();
             MakeAttrs();
 
@@ -195,9 +193,7 @@ namespace NoDriver.Core.Runtime
             {
                 var parentNode = Util.FilterRecurse(doc, n => n.NodeId == _node.ParentId);
                 if (parentNode != null)
-                {
-                    _parent = ElementFactory.Create(parentNode, _tab, _tree);
-                }
+                    _parent = new Element(parentNode, _tab, _tree);
             }
             return this;
         }
@@ -208,16 +204,14 @@ namespace NoDriver.Core.Runtime
             var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
             _remoteObject = result.Object;
 
-            var arguments = new List<Cdp.Runtime.CallArgument>
-            {
-                new Cdp.Runtime.CallArgument { ObjectId = _remoteObject.ObjectId }
-            };
-
             await FlashAsync(0.25, token);
             await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
                 "(el) => el.click()",
                 ObjectId: _remoteObject.ObjectId,
-                Arguments: arguments,
+                Arguments: new List<Cdp.Runtime.CallArgument>
+                {
+                    new Cdp.Runtime.CallArgument(ObjectId: _remoteObject.ObjectId)
+                },
                 AwaitPromise: true,
                 UserGesture: true,
                 ReturnByValue: true), token: token);
@@ -248,7 +242,7 @@ namespace NoDriver.Core.Runtime
                 ObjectId: _remoteObject.ObjectId,
                 Arguments: new List<Cdp.Runtime.CallArgument>
                 {
-                    new Cdp.Runtime.CallArgument { ObjectId = _remoteObject.ObjectId }
+                    new Cdp.Runtime.CallArgument(ObjectId: _remoteObject.ObjectId)
                 },
                 ReturnByValue: true,
                 UserGesture: true), token: token);
@@ -305,9 +299,10 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
-        public async Task MouseClickAsync(string button = "left", int buttons = 1, int modifiers = 0)
+        //ok 要測試
+        public async Task MouseClickAsync(string button = "left", int buttons = 1, int modifiers = 0, CancellationToken token = default)
         {
-            var pos = await GetPositionAsync();
+            var pos = await GetPositionAsync(token: token);
             if (pos?.Center == null)
             {
                 Console.WriteLine($"Could not calculate box model for {this}");
@@ -316,8 +311,8 @@ namespace NoDriver.Core.Runtime
 
             Console.WriteLine($"Clicking on location {pos.Center.X}, {pos.Center.Y}");
 
-            await _tab.MouseClickAsync(pos.Center.X, pos.Center.Y);
-            await _tab.FlashPointAsync(pos.Center.X, pos.Center.Y);
+            await _tab.MouseClickAsync(pos.Center.X, pos.Center.Y, token: token);
+            await _tab.FlashPointAsync(pos.Center.X, pos.Center.Y, token: token);
         }
 
         //ok
@@ -392,22 +387,24 @@ namespace NoDriver.Core.Runtime
                 await _tab.SendAsync(Cdp.Input.DispatchKeyEvent("char", Text: c.ToString()), token: token);
             }
         }
-
-        public async Task SendFileAsync(params string[] filePaths)
+        
+        //ok 要測試
+        public async Task SendFileAsync(List<string> filePaths, CancellationToken token = default)
         {
             await _tab.SendAsync(Cdp.DOM.SetFileInputFiles(
-                files: filePaths.ToList(),
-                backendNodeId: BackendNodeId,
-                objectId: ObjectId
-            ));
+                Files: filePaths.ToList(),
+                BackendNodeId: BackendNodeId,
+                ObjectId: ObjectId), token: token);
         }
 
-        public async Task FocusAsync()
+        //ok 要測試
+        public async Task FocusAsync(CancellationToken token = default)
         {
-            await ApplyAsync("(element) => element.focus()");
+            await ApplyAsync("(element) => element.focus()", token: token);
         }
 
-        public async Task SelectOptionAsync()
+        //ok 要測試
+        public async Task SelectOptionAsync(CancellationToken token = default)
         {
             if (NodeName == "OPTION")
             {
@@ -415,47 +412,53 @@ namespace NoDriver.Core.Runtime
                     (o) => {  
                         o.selected = true ; 
                         o.dispatchEvent(new Event('change', {view: window, bubbles: true}))
-                    }");
+                    }", token: token);
             }
         }
 
-        public async Task SetValueAsync(string value)
+        //ok 要測試
+        public async Task SetValueAsync(string value, CancellationToken token = default)
         {
-            await _tab.SendAsync(SetNodeValue(NodeId, value));
+            await _tab.SendAsync(Cdp.DOM.SetNodeValue(NodeId: NodeId, Value: value), token: token);
         }
 
-        public async Task SetTextAsync(string value)
+        //ok 要測試
+        public async Task SetTextAsync(string value, CancellationToken token = default)
         {
             if (NodeType != 3)
             {
                 if (ChildNodeCount == 1)
                 {
                     var childNode = Children[0];
-                    await childNode.SetTextAsync(value);
-                    await UpdateAsync();
+                    await childNode.SetTextAsync(value, token);
+                    await UpdateAsync(token: token);
                     return;
                 }
                 throw new InvalidOperationException("Could only set value of text nodes.");
             }
-            await UpdateAsync();
-            await _tab.SendAsync(SetNodeValue(NodeId, value));
+            await UpdateAsync(token: token);
+            await _tab.SendAsync(Cdp.DOM.SetNodeValue(NodeId: NodeId, Value: value), token: token);
         }
 
-        public async Task<string> GetHtmlAsync()
+        //ok 要測試
+        public async Task<string> GetHtmlAsync(CancellationToken token = default)
         {
-            return await _tab.SendAsync(Cdp.DOM.GetOuterHtml(BackendNodeId));
+            var result = await _tab.SendAsync(Cdp.DOM.GetOuterHTML(BackendNodeId: BackendNodeId), token: token);
+            return result.OuterHTML;
         }
 
-        public async Task<List<Element>> QuerySelectorAllAsync(string selector)
+        //ok 要測試
+        public async Task<List<Element>> QuerySelectorAllAsync(string selector, CancellationToken token = default)
         {
-            await UpdateAsync();
-            return await _tab.QuerySelectorAllAsync(selector, node: this);
+            await UpdateAsync(token: token);
+            return await _tab.QuerySelectorAllAsync(selector, node: this, token: token);
         }
 
-        public async Task<Element> QuerySelectorAsync(string selector)
+        //ok 要測試
+        public async Task<Element?> QuerySelectorAsync(string selector, CancellationToken token = default)
         {
-            await UpdateAsync();
-            return await _tab.QuerySelectorAsync(selector, this);
+            await UpdateAsync(token: token);
+            return await _tab.QuerySelectorAsync(selector, node: this, token: token);
         }
 
         //ok 檢查是否正常 Tab 也有相同函數
@@ -585,14 +588,13 @@ namespace NoDriver.Core.Runtime
                 }
                 """;
 
-            var arguments = new List<Cdp.Runtime.CallArgument>
-            {
-                new Cdp.Runtime.CallArgument { ObjectId = _remoteObject.ObjectId }
-            };
             await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
                 script,
                 ObjectId: _remoteObject.ObjectId,
-                Arguments: arguments,
+                Arguments: new List<Cdp.Runtime.CallArgument>
+                {
+                    new Cdp.Runtime.CallArgument(ObjectId: _remoteObject.ObjectId)
+                },
                 AwaitPromise: true,
                 UserGesture: true), token: token);
         }

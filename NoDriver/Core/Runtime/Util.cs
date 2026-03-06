@@ -26,6 +26,56 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok
+        public static Cdp.DOM.Node? FilterRecurse(Cdp.DOM.Node? doc, Func<Cdp.DOM.Node, bool> predicate)
+        {
+            if (doc?.Children != null)
+            {
+                foreach (var child in doc.Children)
+                {
+                    if (predicate(child))
+                        return child;
+
+                    if (child.ShadowRoots != null && child.ShadowRoots.Count > 0)
+                    {
+                        var shadowRootResult = FilterRecurse(child.ShadowRoots[0], predicate);
+                        if (shadowRootResult != null)
+                            return shadowRootResult;
+                    }
+
+                    var result = FilterRecurse(child, predicate);
+                    if (result != null)
+                        return result;
+                }
+            }
+            return null;
+        }
+
+        //ok
+        public static Element? FilterRecurse(Element? doc, Func<Element, bool> predicate)
+        {
+            if (doc?.Children != null)
+            {
+                foreach (var child in doc.Children)
+                {
+                    if (predicate(child))
+                        return child;
+
+                    if (child.ShadowChildren != null && child.ShadowChildren.Count > 0)
+                    {
+                        var shadowRootResult = FilterRecurse(child.ShadowChildren[0], predicate);
+                        if (shadowRootResult != null)
+                            return shadowRootResult;
+                    }
+
+                    var result = FilterRecurse(child, predicate);
+                    if (result != null)
+                        return result;
+                }
+            }
+            return null;
+        }
+
+        //ok
         public static IEnumerable<(double x, double y)> Circle(int x, int? y = null, int radius = 10, int num = 10, int dir = 0)
         {
             var r = radius;
