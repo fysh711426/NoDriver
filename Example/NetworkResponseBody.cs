@@ -14,7 +14,7 @@ namespace Example
                 if (browser.MainTab == null)
                     throw new InvalidOperationException("MainTab is null.");
 
-                async Task responseReceivedHandler(Cdp.Network.ResponseReceived e, Connection tab)
+                async Task responseReceivedHandler(Cdp.Network.ResponseReceived e, Tab tab)
                 {
                     try
                     {

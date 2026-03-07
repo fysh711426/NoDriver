@@ -5,14 +5,14 @@ using System.Text.Json;
 
 namespace NoDriver.Core
 {
-    public delegate void SyncDomainEventHandler<in TEvent>(TEvent @event, Connection sender) where TEvent : IEvent;
+    public delegate void SyncDomainEventHandler<in TEvent>(TEvent @event, Tab sender) where TEvent : IEvent;
 
-    public delegate Task AsyncDomainEventHandler<in TEvent>(TEvent @event, Connection sender) where TEvent : IEvent;
+    public delegate Task AsyncDomainEventHandler<in TEvent>(TEvent @event, Tab sender) where TEvent : IEvent;
 
     public interface IDomainEventHandlerWrapper
     {
         Delegate RawHandler { get; }
-        Task HandleAsync(ProtocolEvent rawEvent, Connection sender);
+        Task HandleAsync(ProtocolEvent rawEvent, Tab sender);
     }
 
     public class DomainEventHandlerWrapper<TEvent> : IDomainEventHandlerWrapper where TEvent : IEvent
@@ -35,7 +35,7 @@ namespace NoDriver.Core
                 return Task.CompletedTask;
             };
         }
-        public Task HandleAsync(ProtocolEvent rawEvent, Connection sender)
+        public Task HandleAsync(ProtocolEvent rawEvent, Tab sender)
         {
             var @event = rawEvent.Params.Deserialize<TEvent>(JsonProtocolSerialization.Settings);
             if (@event == null)

@@ -26,6 +26,25 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok
+        public static List<Cdp.DOM.Node> FilterRecurseAll(Cdp.DOM.Node doc, Func<Cdp.DOM.Node, bool> predicate)
+        {
+            var outList = new List<Cdp.DOM.Node>();
+            if (doc?.Children != null)
+            {
+                foreach (var child in doc.Children)
+                {
+                    if (predicate(child))
+                        outList.Add(child);
+
+                    if (child.ShadowRoots?.Count > 0)
+                        outList.AddRange(FilterRecurseAll(child.ShadowRoots[0], predicate));
+                    outList.AddRange(FilterRecurseAll(child, predicate));
+                }
+            }
+            return outList;
+        }
+
+        //ok
         public static Cdp.DOM.Node? FilterRecurse(Cdp.DOM.Node? doc, Func<Cdp.DOM.Node, bool> predicate)
         {
             if (doc?.Children != null)
@@ -35,7 +54,7 @@ namespace NoDriver.Core.Runtime
                     if (predicate(child))
                         return child;
 
-                    if (child.ShadowRoots != null && child.ShadowRoots.Count > 0)
+                    if (child.ShadowRoots?.Count > 0)
                     {
                         var shadowRootResult = FilterRecurse(child.ShadowRoots[0], predicate);
                         if (shadowRootResult != null)
@@ -51,28 +70,54 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok
-        public static Element? FilterRecurse(Element? doc, Func<Element, bool> predicate)
+        public static IEnumerable<Cdp.Page.Frame> FlattenFrameTree(Cdp.Page.FrameTree tree)
         {
-            if (doc?.Children != null)
+            yield return tree.Frame;
+            if (tree.ChildFrames != null)
             {
-                foreach (var child in doc.Children)
+                foreach (var child in tree.ChildFrames)
                 {
-                    if (predicate(child))
-                        return child;
-
-                    if (child.ShadowChildren != null && child.ShadowChildren.Count > 0)
+                    foreach (var flatten in FlattenFrameTree(child))
                     {
-                        var shadowRootResult = FilterRecurse(child.ShadowChildren[0], predicate);
-                        if (shadowRootResult != null)
-                            return shadowRootResult;
+                        yield return flatten;
                     }
-
-                    var result = FilterRecurse(child, predicate);
-                    if (result != null)
-                        return result;
                 }
             }
-            return null;
+        }
+
+        //ok
+        public static IEnumerable<Cdp.Page.Frame> FlattenFrameTree(Cdp.Page.FrameResourceTree tree)
+        {
+            yield return tree.Frame;
+            if (tree.ChildFrames != null)
+            {
+                foreach (var child in tree.ChildFrames)
+                {
+                    foreach (var flatten in FlattenFrameTree(child))
+                    {
+                        yield return flatten;
+                    }
+                }
+            }
+        }
+
+        //ok
+        public static IEnumerable<(Cdp.Page.Frame frame, Cdp.Page.FrameResource resource)> FlattenFrameTreeResources(Cdp.Page.FrameResourceTree tree)
+        {
+            foreach (var res in tree.Resources)
+            {
+                yield return (tree.Frame, res);
+            }
+            if (tree.ChildFrames != null)
+            {
+                foreach (var child in tree.ChildFrames)
+                {
+                    foreach (var flatten in FlattenFrameTreeResources(child))
+                    {
+                        yield return flatten;
+                    }
+                }
+            }
         }
 
         //ok

@@ -14,17 +14,15 @@ namespace Example
                     await browser.GetAsync("https://www.google.com", newWindow: true);
                 }
 
-                async Task requestHandler(Cdp.Fetch.RequestPaused e, Connection conn)
+                async Task requestHandler(Cdp.Fetch.RequestPaused e, Tab tab)
                 {
-                    if (conn is Tab tab)
-                    {
-                        Console.WriteLine("\nRequestPaused handler");
-                        Console.WriteLine($"Event: {e.GetType().FullName}");
-                        Console.WriteLine($"TAB = {tab.ToString()})");
+                    Console.WriteLine("\nRequestPaused handler");
+                    Console.WriteLine($"Event: {e.GetType().FullName}");
+                    Console.WriteLine($"TAB = {tab.ToString()})");
 
-                        await tab.FeedCdpAsync(Cdp.Fetch.ContinueRequest(RequestId: e.RequestId));
-                    }
-                };
+                    await tab.FeedCdpAsync(Cdp.Fetch.ContinueRequest(RequestId: e.RequestId));
+                }
+                ;
 
                 foreach (var tab in browser.Tabs)
                 {

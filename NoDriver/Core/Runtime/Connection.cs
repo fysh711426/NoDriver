@@ -18,10 +18,10 @@ namespace NoDriver.Core.Runtime
         private int _messageIdCounter = 0;
 
         public string WebSocketUrl { get; } = "";
-        public Browser? Browser { get; } = null;
+        public Browser? Browser { get; set; } = null;
         public ClientWebSocket? WebSocket { get; private set; } = null;
         public Cdp.Target.TargetInfo? Target { get; set; } = null;
-
+        
         public ConcurrentDictionary<int, Transaction<ICommand>> Mapper { get; } = new();
         public ConcurrentDictionary<string, List<IDomainEventHandlerWrapper>> Handlers { get; } = new();
         public ConcurrentDictionary<string, byte> EnabledDomains { get; } = new();

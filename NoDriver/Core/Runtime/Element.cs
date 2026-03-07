@@ -13,6 +13,8 @@ namespace NoDriver.Core.Runtime
         private Cdp.Runtime.RemoteObject? _remoteObject = null;
         private ConcurrentDictionary<string, string> _attrs = new(StringComparer.OrdinalIgnoreCase);
 
+        private bool _isHighlighted = false;
+
         public string Tag => NodeName.ToLowerInvariant();
         public string TagName => Tag;
         public Cdp.DOM.NodeId NodeId => _node.NodeId;
@@ -45,40 +47,50 @@ namespace NoDriver.Core.Runtime
         public Cdp.DOM.CompatibilityMode? CompatibilityMode => _node.CompatibilityMode;
         public Cdp.DOM.BackendNode? AssignedSlot => _node.AssignedSlot;
         public Tab Tab => _tab;
+        //ok 要測試
         public List<Element> ShadowChildren
         {
             get
             {
-                if (ShadowRoots != null && ShadowRoots.Count > 0)
+                var children = new List<Element>();
+                if (ShadowRoots?.Count > 0)
                 {
                     var root = ShadowRoots[0];
                     if (root.ShadowRootType == Cdp.DOM.ShadowRootType.Open)
                     {
-                        return root.Children?.Select(child => ElementFactory.Create(child, Tab)).ToList();
+                        if (root.Children != null)
+                        {
+                            foreach(var child in root.Children)
+                            {
+                                children.Add(new Element(child, _tab));
+                            }
+                        }
                     }
                 }
-                return null;
+                return children;
             }
         }
         public Cdp.DOM.Node Node => _node;
-        public Cdp.DOM.Node Tree
+        public Cdp.DOM.Node? Tree
         {
             get => _tree;
             set => _tree = value;
         }
         public ConcurrentDictionary<string, string> Attrs => _attrs;
-        public Element Parent
+        //ok 要測試
+        public Element? Parent
         {
             get
             {
                 if (Tree == null)
                     throw new InvalidOperationException("Could not get parent since the element has no tree set.");
                 var parentNode = Util.FilterRecurse(Tree, n => n.NodeId == ParentId);
-                if (parentNode == null)
-                    return null;
-                return ElementFactory.Create(parentNode, _tab, Tree);
+                if (parentNode != null)
+                    return new Element(parentNode, _tab, _tree);
+                return null;
             }
         }
+        //ok 要測試
         public List<Element> Children
         {
             get
@@ -94,7 +106,7 @@ namespace NoDriver.Core.Runtime
                     {
                         foreach (var child in frame.Children)
                         {
-                            var childElem = ElementFactory.Create(child, _tab, frame);
+                            var childElem = new Element(child, _tab, frame);
                             if (childElem != null)
                                 children.Add(childElem);
                         }
@@ -109,7 +121,7 @@ namespace NoDriver.Core.Runtime
                 {
                     foreach (var child in _node.Children)
                     {
-                        var childElem = ElementFactory.Create(child, _tab, Tree);
+                        var childElem = new Element(child, _tab, _tree);
                         if (childElem != null)
                             children.Add(childElem);
                     }
@@ -119,6 +131,7 @@ namespace NoDriver.Core.Runtime
         }
         public Cdp.Runtime.RemoteObject? RemoteObject => _remoteObject;
         public Cdp.Runtime.RemoteObjectId? ObjectId => RemoteObject?.ObjectId;
+        //ok 要測試
         public string Text
         {
             get
@@ -127,6 +140,7 @@ namespace NoDriver.Core.Runtime
                 return textNode?.NodeValue ?? "";
             }
         }
+        //ok 要測試
         public string TextAll
         {
             get
@@ -231,7 +245,13 @@ namespace NoDriver.Core.Runtime
             //return JsonSerializer.Deserialize<Dictionary<string, object>>(jsonStr);
         }
 
-        //ok
+        //ok 要測試
+        public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> CallAsync(string jsMethod, CancellationToken token = default)
+        {
+            return await ApplyAsync($"(e) => e['{jsMethod}']()", token: token);
+        }
+
+        //ok 要測試
         public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> ApplyAsync(string jsFunction, bool returnByValue = true, CancellationToken token = default)
         {
             var resolveResult = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
@@ -387,7 +407,13 @@ namespace NoDriver.Core.Runtime
                 await _tab.SendAsync(Cdp.Input.DispatchKeyEvent("char", Text: c.ToString()), token: token);
             }
         }
-        
+
+        //ok
+        public async Task SendFileAsync(params string[] filePaths)
+        {
+            await SendFileAsync(filePaths);
+        }
+
         //ok 要測試
         public async Task SendFileAsync(List<string> filePaths, CancellationToken token = default)
         {
@@ -599,42 +625,45 @@ namespace NoDriver.Core.Runtime
                 UserGesture: true), token: token);
         }
 
-        private bool _isHighlighted = false;
-        public async Task HighlightOverlayAsync()
+        //ok 要測試
+        public async Task HighlightOverlayAsync(CancellationToken token = default)
         {
             if (_isHighlighted)
             {
                 _isHighlighted = false;
-                await _tab.SendAsync(Cdp.Overlay.HideHighlight());
-                await _tab.SendAsync(Cdp.DOM.Disable());
-                await _tab.SendAsync(Cdp.Overlay.Disable());
+                await _tab.SendAsync(Cdp.Overlay.HideHighlight(), token: token);
+                await _tab.SendAsync(Cdp.DOM.Disable(), token: token);
+                await _tab.SendAsync(Cdp.Overlay.Disable(), token: token);
                 return;
             }
 
-            await _tab.SendAsync(Cdp.DOM.Enable());
-            await _tab.SendAsync(Cdp.Overlay.Enable());
-            var conf = new Cdp.Overlay.HighlightConfig 
-            { 
-                ShowInfo = true, 
-                ShowExtensionLines = true, 
-                ShowStyles = true 
-            };
-            await _tab.SendAsync(Cdp.Overlay.HighlightNode(highlightConfig: conf, backendNodeId: BackendNodeId));
+            await _tab.SendAsync(Cdp.DOM.Enable(), token: token);
+            await _tab.SendAsync(Cdp.Overlay.Enable(), token: token);
+            await _tab.SendAsync(Cdp.Overlay.HighlightNode(
+                HighlightConfig: new Cdp.Overlay.HighlightConfig
+                {
+                    ShowInfo = true,
+                    ShowExtensionLines = true,
+                    ShowStyles = true
+                },
+                BackendNodeId: BackendNodeId), token: token);
             _isHighlighted = true;
         }
 
-        public async Task RecordVideoAsync(string? filename = null, string? folder = null, double? duration = null)
+        //ok 要測試
+        public async Task RecordVideoAsync(string? filename = null, string? folder = null, double? duration = null, CancellationToken token = default)
         {
-            if (NodeName != "VIDEO") 
+            if (NodeName != "VIDEO")
                 throw new InvalidOperationException("RecordVideoAsync can only be called on html5 video elements.");
 
             var directoryPath = folder;
             if (string.IsNullOrWhiteSpace(directoryPath))
                 directoryPath = Path.Combine(Directory.GetCurrentDirectory(), "downloads");
+            directoryPath = Path.GetFullPath(directoryPath);
             Directory.CreateDirectory(directoryPath);
 
-            await _tab.SendAsync(Cdp.Browser.SetDownloadBehavior("allow", downloadPath: directoryPath));
-            await InvokeAsync("pause");
+            await _tab.SendAsync(Cdp.Browser.SetDownloadBehavior("allow", DownloadPath: directoryPath), token: token);
+            await CallAsync("pause", token);
 
             var jsDuration = 0.0d;
             if (duration != null)
@@ -677,12 +706,11 @@ namespace NoDriver.Core.Runtime
                         }
                         vid['_recording'] = true
                     ;}
-                
                 """;
 
-            await ApplyAsync(script);
-            await InvokeAsync("play");
-            await _tab;
+            await ApplyAsync(script, token: token);
+            await CallAsync("play", token);
+            await _tab.WaitAsync(token: token);
         }
 
         //ok 要檢查 value 是不是有正確轉換
@@ -702,6 +730,7 @@ namespace NoDriver.Core.Runtime
             return false;
         }
 
+        //ok
         private void MakeAttrs()
         {
             var sav = null as string;
@@ -716,7 +745,7 @@ namespace NoDriver.Core.Runtime
                     }
                     else
                     {
-                        if (sav != null) 
+                        if (sav != null)
                             _attrs[sav] = a;
                     }
                 }

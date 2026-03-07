@@ -16,14 +16,16 @@ namespace NoDriver.Core.Runtime
 
         public Config? Config { get; private set; } = null;
         public Connection? Connection { get; private set; } = null;
-        public List<Connection> Targets { get; private set; } = new();
+        public List<Tab> Targets { get; private set; } = new();
         public JsonElement? Info { get; private set; } = null;
 
         public string WebSocketUrl => Info?.GetProperty("webSocketDebuggerUrl").GetString();
 
-        public Tab MainTab => Targets.Where(x => x.Type == "page").FirstOrDefault();
+        //ok
+        public Tab? MainTab => Targets.Where(it => it.Target?.Type == "page").FirstOrDefault();
 
-        public List<Tab> Tabs => Targets.Where(item => item.Type == "page").ToList();
+        //ok
+        public List<Tab> Tabs => Targets.Where(item => item.Target?.Type == "page").ToList();
 
         public CookieJar Cookies
         {
@@ -35,6 +37,7 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        //ok
         public bool Stopped => _process == null || _process.HasExited;
 
         private Browser() 
@@ -62,7 +65,7 @@ namespace NoDriver.Core.Runtime
             if (@event is Cdp.Target.TargetInfoChanged infoChanged)
             {
                 var targetInfo = infoChanged.TargetInfo;
-                var currentTab = Targets.FirstOrDefault(it => it.TargetId == targetInfo.TargetId);
+                var currentTab = Targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
                 if (currentTab != null)
                     currentTab.Target = targetInfo;
 
@@ -82,18 +85,18 @@ namespace NoDriver.Core.Runtime
             else if (@event is Cdp.Target.TargetCreated created)
             {
                 var targetInfo = created.TargetInfo;
-                var newTarget = new Tab(
-                    $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId}",
-                    targetInfo,
-                    this
-                );
-                Targets.Add(newTarget);
-
-                Console.WriteLine($"Target #{Targets.Count - 1} created => {newTarget.ToString()}");
+                if (Config?.Host != null && Config?.Port != null)
+                {
+                    var newTarget = new Tab(
+                        $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId}",
+                        targetInfo, this);
+                    Targets.Add(newTarget);
+                    Console.WriteLine($"Target #{Targets.Count - 1} created => {newTarget.ToString()}");
+                }
             }
             else if (@event is Cdp.Target.TargetDestroyed destroyed)
             {
-                var currentTab = Targets.FirstOrDefault(it => it.TargetId == destroyed.TargetId);
+                var currentTab = Targets.FirstOrDefault(it => it.Target?.TargetId == destroyed.TargetId);
                 if (currentTab != null)
                 {
                     Console.WriteLine($"Target removed. id #{Targets.IndexOf(currentTab)} => {currentTab.ToString()}");
@@ -103,26 +106,38 @@ namespace NoDriver.Core.Runtime
             _ = UpdateTargetsAsync();
         }
 
-        public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false)
+        //ok
+        public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false, CancellationToken token = default)
         {
+            if (Connection == null)
+                throw new InvalidOperationException("Connection cannot be null.");
+
             if (newTab || newWindow)
             {
-                var targetId = await Connection.SendAsync(
-                    Cdp.Target.CreateTarget(url, NewWindow: newWindow, EnableBeginFrameControl: true));
-                var connection = Targets.FirstOrDefault(it => it.Type == "page" && it.TargetId == targetId);
+                var result = await Connection.SendAsync(
+                    Cdp.Target.CreateTarget(url, NewWindow: newWindow, EnableBeginFrameControl: true), token: token);
+                var targetId = result.TargetId;
+
+                var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == targetId);
+                if (connection == null)
+                    throw new InvalidOperationException("Targets connection cannot be null.");
+
                 connection.Browser = this;
-                //await UpdateTargetsAsync();
-                //await self
+                await UpdateTargetsAsync(token);
+                await WaitAsync(0, token);
                 return connection;
             }
             else
             {
-                var connection = Targets.FirstOrDefault(it => it.Type == "page");
-                var result = await connection.SendAsync(Cdp.Page.Navigate(url));
-                connection.FrameId = result.FrameId;
+                var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page");
+                if (connection == null)
+                    throw new InvalidOperationException("Targets connection cannot be null.");
+
+                var result = await connection.SendAsync(Cdp.Page.Navigate(url), token: token);
+                //connection.FrameId = result.FrameId;
                 connection.Browser = this;
-                //await UpdateTargetsAsync();
-                //await self
+                await UpdateTargetsAsync(token);
+                await WaitAsync(0, token);
                 return connection;
             }
         }
@@ -155,7 +170,7 @@ namespace NoDriver.Core.Runtime
 
             await WaitAsync(0.5);
 
-            var connection = Targets.FirstOrDefault(it => it.Type == "page" && it.TargetId == targetId);
+            var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetIdId == targetId);
             return connection;
         }
 
@@ -352,18 +367,22 @@ namespace NoDriver.Core.Runtime
                 var result = await Connection.SendAsync(Cdp.Target.GetTargets(), token: token);
 
                 var targets = result.TargetInfos;
-                foreach (var t in targets)
+                foreach (var target in targets)
                 {
-                    var existingTab = Targets.FirstOrDefault(it => it.Target?.TargetId == t.TargetId);
+                    var existingTab = Targets.FirstOrDefault(it => it.Target?.TargetId == target.TargetId);
                     if (existingTab != null)
                     {
-                        if (existingTab.Target != t)
-                            existingTab.Target = t;
+                        if (existingTab.Target != target)
+                            existingTab.Target = target;
                     }
                     else
                     {
                         if (Config?.Host != null && Config?.Port != null)
-                            Targets.Add(new Connection($"ws://{Config.Host}:{Config.Port}/devtools/page/{t.TargetId}", t, this));
+                        {
+                            Targets.Add(new Tab(
+                                $"ws://{Config.Host}:{Config.Port}/devtools/page/{target.TargetId}",
+                                target, this));
+                        }
                     }
                 }
             }

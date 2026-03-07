@@ -14,19 +14,29 @@ namespace NoDriver.Core.Runtime
         private bool _prepHeadlessDone = false;
         private bool _prepExpertDone = false;
 
+        //ok
         public string InspectorUrl
-            => $"http://{Browser.Config.Host}:{Browser.Config.Port}/devtools/inspector.html?ws={WebSocketUrl.Substring(5)}";
+        {
+            get
+            {
+                if (Browser?.Config?.Host != null && Browser?.Config?.Port != null)
+                    return $"http://{Browser.Config.Host}:{Browser.Config.Port}/devtools/inspector.html?ws={WebSocketUrl.Substring(5)}";
+                return "";
+            }
+        }
 
         public Tab(string webSocketUrl, Cdp.Target.TargetInfo? target = null, Browser? browser = null) : 
             base(webSocketUrl, target, browser)
         {
         }
 
+        // ok 要測試
         public void InspectorOpen()
         {
             Process.Start(new ProcessStartInfo(InspectorUrl) { UseShellExecute = true });
         }
 
+        // ok 要測試
         public Task OpenExternalInspectorAsync()
         {
             InspectorOpen();
@@ -218,7 +228,7 @@ namespace NoDriver.Core.Runtime
             }
             else
             {
-                var result = await SendAsync(Page.Navigate(url));
+                var result = await SendAsync(Cdp.Page.Navigate(url));
                 await WaitAsync();
                 return this;
             }
@@ -338,19 +348,25 @@ namespace NoDriver.Core.Runtime
             return Element.Create(_node, this, doc);
         }
 
-        public async Task<List<Element>> FindElementsByTextAsync(string text, string? tagHint = null)
+        // ok 要測試
+        public async Task<List<Element>> FindElementsByTextAsync(string text, string? tagHint = null, CancellationToken token = default)
         {
             text = text.Trim();
-            var doc = await SendAsync(GetDocument(-1, true));
-            var searchResult = await SendAsync(PerformSearch(text, true));
+            var docResult = await SendAsync(Cdp.DOM.GetDocument(-1, true), token: token);
+            var doc = docResult.Root;
+
+            var searchResult = await SendAsync(Cdp.DOM.PerformSearch(text, true), token: token);
             var searchId = searchResult.SearchId;
             var nresult = searchResult.ResultCount;
 
-            var nodeIds = new List<int>();
+            var nodeIds = new List<Cdp.DOM.NodeId>();
             if (nresult > 0)
-                nodeIds = await SendAsync(DOM.GetSearchResults(searchId, 0, nresult));
+            {
+                var result = await SendAsync(Cdp.DOM.GetSearchResults(searchId, 0, nresult), token: token);
+                nodeIds = result.NodeIds.ToList();
+            }
 
-            await SendAsync(DOM.DiscardSearchResults(searchId));
+            await SendAsync(Cdp.DOM.DiscardSearchResults(searchId), token: token);
 
             var items = new List<Element>();
             foreach (var nid in nodeIds)
@@ -358,25 +374,19 @@ namespace NoDriver.Core.Runtime
                 var node = Util.FilterRecurse(doc, n => n.NodeId == nid);
                 if (node == null)
                 {
-                    node = await SendAsync(DOM.ResolveNode(nodeId: nid));
-                    if (node == null)
-                        continue;
+                    continue;
+                    // 這裡型別不對所以拿掉
+                    //var result = await SendAsync(Cdp.DOM.ResolveNode(NodeId: nid), token: token);
+                    //node = result.Object;
+                    //if (node == null)
+                    //    continue;
                 }
 
-                var elem = null as Element;
-                try 
-                { 
-                    elem = Element.Create(node, this, doc); 
-                }
-                catch
-                { 
-                    continue; 
-                }
-
-                if (elem.NodeType == 3) // Text node
+                var elem = new Element(node, this, doc);
+                if (elem.NodeType == 3)
                 {
-                    if (elem.Parent == null) 
-                        await elem.UpdateAsync();
+                    if (elem.Parent == null)
+                        await elem.UpdateAsync(token: token);
                     items.Add(elem.Parent ?? elem);
                 }
                 else
@@ -388,38 +398,33 @@ namespace NoDriver.Core.Runtime
             var iframes = Util.FilterRecurseAll(doc, n => n.NodeName == "IFRAME");
             foreach (var iframe in iframes)
             {
-                var iframeElem = Element.Create(iframe, this, iframe.ContentDocument);
+                var iframeElem = new Element(iframe, this, iframe.ContentDocument);
                 if (iframeElem.ContentDocument != null)
                 {
-                    var iframeTextNodes = Util.FilterRecurseAll(iframeElem, n => n.NodeType == 3 && n.NodeValue.Lower().Contains(text));
+                    var textLower = text.ToLowerInvariant();
+                    var iframeTextNodes = Util.FilterRecurseAll(iframeElem.Node,
+                        n => n.NodeType == 3 && n.NodeValue.ToLowerInvariant().Contains(textLower));
+
                     foreach (var textNode in iframeTextNodes)
                     {
-                        var textElem = Element.Create(textNode, this, iframeElem.Tree);
-                        if (textElem.Parent != null) 
+                        var textElem = new Element(textNode, this, iframeElem.Tree);
+                        if (textElem.Parent != null)
                             items.Add(textElem.Parent);
                     }
                 }
             }
 
-            await SendAsync(Disable());
+            await SendAsync(Cdp.DOM.Disable(), token: token);
             return items;
         }
 
-        public async Task<Element?> FindElementByTextAsync(string text, bool bestMatch = false, bool returnEnclosingElement = true)
+        // ok 要測試
+        public async Task<Element?> FindElementByTextAsync(string text, bool bestMatch = false, bool returnEnclosingElement = true, CancellationToken token = default)
         {
-            var items = await FindElementsByTextAsync(text);
-            if (items == null || items.Count == 0) return null;
-
+            var items = await FindElementsByTextAsync(text, token: token);
             if (bestMatch)
-            {
                 return items.OrderBy(el => Math.Abs(text.Length - (el.TextAll?.Length ?? 0))).FirstOrDefault();
-                //elem = closest_by_length or items[0]
-            }
             return items.FirstOrDefault();
-            //for elem in items:
-            //    if elem:
-            //        return elem
-            //這裡感覺可能有 null 需要另外處理 ??
         }
 
         //ok
@@ -463,33 +468,126 @@ namespace NoDriver.Core.Runtime
             return (result.Result, result.ExceptionDetails);
         }
 
-        public async Task<object> JsDumpsAsync(string objName, bool returnByValue = true)
+        // ok 要測試
+        public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> JsDumpsAsync(string objName, bool returnByValue = true, CancellationToken token = default)
         {
-            string jsCodeA = 
+            var jsCodeA = 
                 $$"""
-                    function ___dump(obj, _d = 0) { ... } // (JS snippet truncated for brevity)
-                    ___dumpY({{objName}})
+                    function ___dump(obj, _d = 0) {
+                        let _typesA = ['object', 'function'];
+                        let _typesB = ['number', 'string', 'boolean'];
+                        if (_d == 2) {
+                            // console.log('maxdepth reached for ', obj);
+                            return
+                        }
+                        let tmp = {}
+                        for (let k in obj) {
+                            if (obj[k] == window) continue;
+                            let v;
+                            try {
+                                if (obj[k] === null || obj[k] === undefined || obj[k] === NaN) {
+                                     // console.log('obj[k] is null or undefined or Nan', k, '=>', obj[k])
+                                    tmp[k] = obj[k];
+                                    continue
+                                }
+                            } catch (e) {
+                                tmp[k] = null;
+                                continue
+                            }
+
+                            if (_typesB.includes(typeof obj[k])) {
+                                tmp[k] = obj[k]
+                                continue
+                            }
+
+                            try {
+                                if (typeof obj[k] === 'function') {
+                                    tmp[k] = obj[k].toString()
+                                    continue
+                                }
+
+
+                                if (typeof obj[k] === 'object') {
+                                    tmp[k] = ___dump(obj[k], _d + 1);
+                                    continue
+                                }
+
+
+                            } catch (e) {}
+
+                            try {
+                                tmp[k] = JSON.stringify(obj[k])
+                                continue
+                            } catch (e) {
+
+                            }
+                            try {
+                                tmp[k] = obj[k].toString();
+                                continue
+                            } catch (e) {}
+                        }
+                        return tmp
+                    }
+
+                    function ___dumpY(obj) {
+                        var objKeys = (obj) => {
+                            var [target, result] = [obj, []];
+                            while (target !== null) {
+                                result = result.concat(Object.getOwnPropertyNames(target));
+                                target = Object.getPrototypeOf(target);
+                            }
+                            return result;
+                        }
+                        return Object.fromEntries(
+                            objKeys(obj).map(_ => [_, ___dump(obj[_])]))
+
+                    }
+                    ___dumpY({{objName}})             
                 """;
 
-            string jsCodeB = 
+            var jsCodeB = 
                 $$"""
-                    ((obj, visited = new WeakSet()) => { ... })({{objName}})
+                    ((obj, visited = new WeakSet()) => {
+                     if (visited.has(obj)) {
+                         return {}
+                     }
+                     visited.add(obj)
+                     var result = {}, _tmp;
+                     for (var i in obj) {
+                             try {
+                                 if (i === 'enabledPlugin' || typeof obj[i] === 'function') {
+                                     continue;
+                                 } else if (typeof obj[i] === 'object') {
+                                     _tmp = recurse(obj[i], visited);
+                                     if (Object.keys(_tmp).length) {
+                                         result[i] = _tmp;
+                                     }
+                                 } else {
+                                     result[i] = obj[i];
+                                 }
+                             } catch (error) {
+                                 // console.error('Error:', error);
+                             }
+                         }
+                    return result;
+                })({{objName}})
                 """;
 
-            var (remoteObject, exceptionDetails) = 
-                await SendAsync(Cdp.Runtime.Evaluate(jsCodeA, awaitPromise: true, returnByValue: returnByValue, allowUnsafeEvalBlockedByCsp: true));
-            if (exceptionDetails != null)
+            var result = await SendAsync(Cdp.Runtime.Evaluate(
+                jsCodeA, 
+                AwaitPromise: true, 
+                ReturnByValue: returnByValue, 
+                AllowUnsafeEvalBlockedByCSP: true), token: token);
+
+            if (result.ExceptionDetails != null)
             {
-                (remoteObject, exceptionDetails) = 
-                    await SendAsync(Cdp.Runtime.Evaluate(jsCodeB, awaitPromise: true, returnByValue: returnByValue, allowUnsafeEvalBlockedByCsp: true));
+                result = await SendAsync(Cdp.Runtime.Evaluate(
+                    jsCodeB,
+                    AwaitPromise: true,
+                    ReturnByValue: returnByValue,
+                    AllowUnsafeEvalBlockedByCSP: true), token: token);
             }
-
-            if (exceptionDetails != null)
-                throw new ProtocolErrorException(exceptionDetails.ToString());
-
-            if (returnByValue)
-                return remoteObject?.Value;
-            return (remoteObject, exceptionDetails);
+            return (result.Result, result.ExceptionDetails);
         }
         
         //ok
@@ -597,7 +695,7 @@ namespace NoDriver.Core.Runtime
                 return;
             var (_, bounds) = result.Value;
 
-            await SendAsync(Input.SynthesizeScrollGesture(
+            await SendAsync(Cdp.Input.SynthesizeScrollGesture(
                 0, 0,
                 XDistance: -(bounds.Height * (amount / 100.0)),
                 YOverscroll: 0,
@@ -615,7 +713,7 @@ namespace NoDriver.Core.Runtime
                 return;
             var (_, bounds) = result.Value;
 
-            await SendAsync(Input.SynthesizeScrollGesture(
+            await SendAsync(Cdp.Input.SynthesizeScrollGesture(
                 0, 0,
                 YDistance: bounds.Height * (amount / 100.0),
                 XOverscroll: 0,
@@ -624,6 +722,7 @@ namespace NoDriver.Core.Runtime
                 Speed: 7777), token: token);
         }
 
+        // ok 要測試
         public async Task<Element?> WaitForAsync(string selector = "", string text = "", double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -878,62 +977,56 @@ namespace NoDriver.Core.Runtime
             return result.FrameTree;
         }
 
-        public async Task<Cdp.Page.FrameResourceTree> GetFrameResourceTreeAsync()
+        //ok 要測試
+        public async Task<Cdp.Page.FrameResourceTree> GetFrameResourceTreeAsync(CancellationToken token = default)
         {
-            return await SendAsync(Page.GetResourceTree());
+            var result = await SendAsync(Cdp.Page.GetResourceTree(), token: token);
+            return result.FrameTree;
         }
 
-        public async Task<List<string>> GetFrameResourceUrlsAsync()
+        //ok 要測試
+        public async Task<List<string>> GetFrameResourceUrlsAsync(CancellationToken token = default)
         {
-            var tree = await GetFrameResourceTreeAsync();
+            var tree = await GetFrameResourceTreeAsync(token);
 
             var flatResources = Util.FlattenFrameTreeResources(tree);
 
             return flatResources
-                .Where(r => r.Resource != null && !string.IsNullOrEmpty(r.Resource.Url))
-                .Select(r => r.Resource.Url)
+                .Where(it => !string.IsNullOrWhiteSpace(it.resource?.Url))
+                .Select(it => it.resource.Url)
                 .ToList();
-
-            //return [
-            //    x
-            //    for x in functools.reduce(
-            //        lambda a, b: a + [b[1].url if isinstance(b, tuple) else ""],
-            //        util.flatten_frame_tree_resources(_tree),
-            //        [],
-            //    )
-            //    if x
-            //]
         }
 
-        public async Task<Dictionary<string, List<Cdp.Debugger.SearchMatch>>> SearchFrameResourcesAsync(string query)
+        //ok 要測試
+        public async Task<Dictionary<string, List<Cdp.Debugger.SearchMatch>>> SearchFrameResourcesAsync(string query, CancellationToken token = default)
         {
             try
             {
-                await SendOneshotAsync(Cdp.Page.Enable());
+                await SendOneshotAsync(Cdp.Page.Enable(), token);
 
-                var tree = await GetFrameResourceTreeAsync();
+                var tree = await GetFrameResourceTreeAsync(token);
+
                 var listOfTuples = Util.FlattenFrameTreeResources(tree);
 
                 var results = new Dictionary<string, List<Cdp.Debugger.SearchMatch>>();
                 foreach (var item in listOfTuples)
                 {
-                    var frame = item.Frame;
-                    var resource = item.Resource;
+                    var frame = item.frame;
+                    var resource = item.resource;
 
                     if (frame == null || resource == null) 
                         continue;
 
-                    var res = await SendAsync(Cdp.Page.SearchInResource(frame.Id, resource.Url, query));
-                    if (res != null && res.Count > 0)
-                    {
-                        results[resource.Url] = res;
-                    }
+                    var result = await SendAsync(Cdp.Page.SearchInResource(
+                        FrameId: frame.Id, Url: resource.Url, Query: query), token: token);
+                    if (result.Result?.Count > 0)
+                        results[resource.Url] = result.Result.ToList();
                 }
                 return results;
             }
             finally
             {
-                await SendOneshotAsync(Cdp.Page.Disable());
+                await SendOneshotAsync(Cdp.Page.Disable(), token);
             }
         }
 
@@ -962,7 +1055,7 @@ namespace NoDriver.Core.Runtime
                         throw new FileNotFoundException($"{templateImage} was not found.");
 
                 await SaveScreenshotAsync(screenPath);
-                await SleepAsync(0.05);
+                await WaitAsync(0.05);
 
                 using var im = Cv2.ImRead(screenPath);
                 using var imGray = new Mat();
@@ -1011,10 +1104,12 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public async Task BypassInsecureConnectionWarningAsync()
+        //ok 要測試
+        public async Task BypassInsecureConnectionWarningAsync(CancellationToken token = default)
         {
-            var body = await SelectAsync("body");
-            await body.SendKeysAsync("thisisunsafe");
+            var body = await SelectAsync("body", token: token);
+            if (body != null)
+                await body.SendKeysAsync("thisisunsafe", token);
         }
 
         //ok
@@ -1082,13 +1177,13 @@ namespace NoDriver.Core.Runtime
             if (relative)
                 destPoint = (sourcePoint.X + destPoint.X, sourcePoint.Y + destPoint.Y);
 
-            await SendAsync(Input.DispatchMouseEvent("mousePressed",
-                X: sourcePoint.X, Y: sourcePoint.Y, Button: new Input.MouseButton("left")), token: token);
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed",
+                X: sourcePoint.X, Y: sourcePoint.Y, Button: new Cdp.Input.MouseButton("left")), token: token);
 
             steps = steps < 1 ? 1 : steps;
             if (steps == 1)
             {
-                await SendAsync(Input.DispatchMouseEvent("mouseMoved", X: destPoint.X, Y: destPoint.Y), token: token);
+                await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: destPoint.X, Y: destPoint.Y), token: token);
             }
             else
             {
@@ -1096,13 +1191,13 @@ namespace NoDriver.Core.Runtime
                 var stepSizeY = (destPoint.Y - sourcePoint.Y) / steps;
                 for (var i = 0; i < steps + 1; i++)
                 {
-                    await SendAsync(Input.DispatchMouseEvent("mouseMoved",
+                    await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved",
                         X: sourcePoint.X + stepSizeX * i, Y: sourcePoint.Y + stepSizeY * i), token: token);
                     await Task.Yield();
                 }
             }
-            await SendAsync(Input.DispatchMouseEvent("mouseReleased",
-                X: destPoint.X, Y: destPoint.Y, Button: new Input.MouseButton("left")), token: token);
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased",
+                X: destPoint.X, Y: destPoint.Y, Button: new Cdp.Input.MouseButton("left")), token: token);
         }
 
         //ok
@@ -1170,6 +1265,7 @@ namespace NoDriver.Core.Runtime
 
         public static bool operator !=(Tab? left, Tab? right) => !(left == right);
 
+        //ok
         public override string ToString()
         {
             var extra = "";
@@ -1177,8 +1273,9 @@ namespace NoDriver.Core.Runtime
                 extra = $"[url: {Target.Url}]";
 
             var type = Target?.Type ?? "";
+            var targetId = Target?.TargetId?.Value ?? "";
 
-            return $"<{GetType().Name} [{TargetId}] [{type}] {extra}>";
+            return $"<{GetType().Name} [{targetId}] [{type}] {extra}>";
         }
     }
 }
