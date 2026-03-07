@@ -13,7 +13,7 @@ namespace NoDriver.Core.Runtime
 
         private bool _prepHeadlessDone = false;
         private bool _prepExpertDone = false;
-
+        
         //ok
         public string InspectorUrl
         {
@@ -153,18 +153,18 @@ namespace NoDriver.Core.Runtime
             var items = new List<Element>();
             if (includeFrames)
             {
-                var frames = await QuerySelectorAllAsync("iframe", token: token);
-                foreach (var fr in frames)
+                var frames = await QuerySelectorAllAsync("iframe", null, token: token);
+                foreach (var frame in frames)
                 {
-                    items.AddRange(await fr.QuerySelectorAllAsync(selector, token: token));
+                    items.AddRange(await frame.QuerySelectorAllAsync(selector, token: token));
                 }
             }
 
-            items.AddRange(await QuerySelectorAllAsync(selector, token: token));
+            items.AddRange(await QuerySelectorAllAsync(selector, null, token: token));
             while (items.Count == 0)
             {
                 await WaitAsync(token: token);
-                items.AddRange(await QuerySelectorAllAsync(selector, token: token));
+                items.AddRange(await QuerySelectorAllAsync(selector, null, token: token));
                 if (sw.Elapsed.TotalSeconds > timeout)
                     return items;
                 await WaitAsync(0.5, token);
@@ -234,87 +234,38 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public async Task<List<Element>> QuerySelectorAllAsync(string selector, Cdp.DOM.Node node = null)
+        //ok
+        public async Task<List<Element>> QuerySelectorAllAsync(string selector, Element? node = null, CancellationToken token = default)
         {
-            var doc = null as Cdp.DOM.Node;
-            if (node == null)
-            {
-                doc = await SendAsync(GetDocument(-1, true));
-            }
-            else
-            {
-                doc = node;
-                if (node.NodeName == "IFRAME")
-                    doc = node.ContentDocument;
-            }
-
-            var nodeIds = new List<int>();
-            try
-            {
-                nodeIds = await SendAsync(QuerySelectorAll(doc.NodeId, selector));
-            }
-            //except AttributeError:
-            //# has no content_document
-            //return
-            //catch (Exception e) when (e.Message.Contains("could not find node", StringComparison.OrdinalIgnoreCase))
-            catch(ProtocolErrorException ex)
-            {
-                if (node != null)
-                {
-                    if (ex.Message.ToLowerInvariant().Contains("could not find node"))
-                    {
-                        if (node.GetMetadata("__last") != null)
-                        {
-                            node.RemoveMetadata("__last");
-                            return new List<Element>();
-                        }
-                        await node.UpdateAsync();
-                        node.SetMetadata("__last", true);
-                        return await QuerySelectorAllAsync(selector, node);
-                    }
-                }
-                else
-                {
-                    await SendAsync(Disable());
-                    throw;
-                }
-            }
-
-            if (nodeIds == null || nodeIds.Count == 0) 
-                return new List<Element>();
-
-            var items = new List<Element>();
-            foreach (var nid in nodeIds)
-            {
-                var _node = Util.FilterRecurse(doc, n => n.NodeId == nid);
-                if (_node == null) 
-                    continue;
-                items.Add(Element.Create(_node, this, doc));
-            }
-            return items;
+            return await QuerySelectorAllAsync(selector, node, false, token);
         }
 
-        public async Task<Element?> QuerySelectorAsync(string selector, Cdp.DOM.Node? node = null)
+        // ok 要測試
+        private async Task<List<Element>> QuerySelectorAllAsync(string selector, Element? node = null, bool isRetry = false, CancellationToken token = default)
         {
             selector = selector.Trim();
 
             var doc = null as Cdp.DOM.Node;
             if (node == null)
             {
-                var result = await SendAsync(Cdp.DOM.GetDocument(-1, true));
+                var result = await SendAsync(Cdp.DOM.GetDocument(-1, true), token: token);
                 doc = result.Root;
             }
             else
             {
-                doc = node;
+                doc = node.Node;
                 if (node.NodeName == "IFRAME")
                     doc = node.ContentDocument;
             }
 
-            int? nodeId = null;
+            var nodeIds = new List<Cdp.DOM.NodeId>();
             try
             {
-                nodeId = await SendAsync(QuerySelectorAsync(doc.NodeId, selector));
+                if (doc?.NodeId != null)
+                {
+                    var result = await SendAsync(Cdp.DOM.QuerySelectorAll(doc.NodeId, selector), token: token);
+                    nodeIds = result.NodeIds.ToList();
+                }
             }
             catch (ProtocolErrorException ex)
             {
@@ -322,30 +273,93 @@ namespace NoDriver.Core.Runtime
                 {
                     if (ex.Message.ToLowerInvariant().Contains("could not find node"))
                     {
-                        if (node.GetMetadata("__last") != null)
-                        {
-                            node.RemoveMetadata("__last");
-                            return null;
-                        }
-                        await node.UpdateAsync();
-                        node.SetMetadata("__last", true);
-                        return await QuerySelectorAsync(selector, node);
+                        if (isRetry)
+                            return new();
+
+                        await node.UpdateAsync(token: token);
+                        return await QuerySelectorAllAsync(selector, node, true, token);
                     }
                 }
                 else
                 {
-                    await SendAsync(Disable());
+                    await SendAsync(Cdp.DOM.Disable(), token: token);
                     throw;
                 }
             }
 
-            if (nodeId == null) 
+            if (nodeIds == null || nodeIds.Count == 0)
+                return new();
+
+            var items = new List<Element>();
+            foreach (var nid in nodeIds)
+            {
+                var _node = Util.FilterRecurse(doc, n => n.NodeId == nid);
+                if (_node != null)
+                    items.Add(new Element(_node, this, doc));
+            }
+            return items;
+        }
+
+        //ok
+        public async Task<Element?> QuerySelectorAsync(string selector, Element? node = null, CancellationToken token = default)
+        {
+            return await QuerySelectorAsync(selector, node, false, token);
+        }
+
+        // ok 要測試
+        private async Task<Element?> QuerySelectorAsync(string selector, Element? node = null, bool isRetry = false, CancellationToken token = default)
+        {
+            selector = selector.Trim();
+
+            var doc = null as Cdp.DOM.Node;
+            if (node == null)
+            {
+                var result = await SendAsync(Cdp.DOM.GetDocument(-1, true), token: token);
+                doc = result.Root;
+            }
+            else
+            {
+                doc = node.Node;
+                if (node.NodeName == "IFRAME")
+                    doc = node.ContentDocument;
+            }
+
+            var nodeId = null as Cdp.DOM.NodeId;
+            try
+            {
+                if (doc?.NodeId != null)
+                {
+                    var result = await SendAsync(Cdp.DOM.QuerySelector(doc.NodeId, selector), token: token);
+                    nodeId = result.NodeId;
+                }
+            }
+            catch (ProtocolErrorException ex)
+            {
+                if (node != null)
+                {
+                    if (ex.Message.ToLowerInvariant().Contains("could not find node"))
+                    {
+                        if (isRetry)
+                            return null;
+
+                        await node.UpdateAsync(token: token);
+                        return await QuerySelectorAsync(selector, node, true, token);
+                    }
+                }
+                else
+                {
+                    await SendAsync(Cdp.DOM.Disable(), token: token);
+                    throw;
+                }
+            }
+
+            if (nodeId == null)
                 return null;
 
             var _node = Util.FilterRecurse(doc, n => n.NodeId == nodeId);
-            if (_node == null)
-                return null;
-            return Element.Create(_node, this, doc);
+            if (_node != null)
+                return new Element(_node, this, doc);
+            return null;
         }
 
         // ok 要測試
