@@ -229,8 +229,8 @@ namespace Example
                 var coords = Util.Circle(center.x, center.y, radius: 100, num: 1050, dir: x);
                 foreach (var coord in coords)
                 {
-                    var newLeft = (int)coord.x;
-                    var newTop = (int)coord.y;
+                    var newLeft = (int)coord.X;
+                    var newTop = (int)coord.Y;
                     await tab.SetWindowSizeAsync(newLeft, newTop);
                 }
             }
@@ -238,8 +238,8 @@ namespace Example
                 var coords = Util.Circle(center.x, center.y, radius: 250, num: 500, dir: x);
                 foreach (var coord in coords)
                 {
-                    var newLeft = (int)(coord.x / 2);
-                    var newTop = (int)(coord.y / 2);
+                    var newLeft = (int)(coord.X / 2);
+                    var newTop = (int)(coord.Y / 2);
                     await tab.SetWindowSizeAsync(newLeft, newTop);
                 }
             }

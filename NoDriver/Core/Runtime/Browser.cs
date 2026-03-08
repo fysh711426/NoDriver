@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Maths;
 using Silk.NET.SDL;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace NoDriver.Core.Runtime
@@ -17,7 +18,19 @@ namespace NoDriver.Core.Runtime
         public List<Tab> Targets { get; private set; } = new();
         public JsonElement? Info { get; private set; } = null;
 
-        public string WebSocketUrl => Info?.GetProperty("webSocketDebuggerUrl").GetString();
+        public string WebSocketUrl
+        {
+            get
+            {
+                if (Info?.TryGetProperty("webSocketDebuggerUrl", out var prop) == true)
+                {
+                    var value = prop.GetString();
+                    if (value != null)
+                        return value;
+                }
+                return "";
+            }
+        }
 
         //ok
         public Tab? MainTab => Targets.Where(it => it.Target?.Type == "page").FirstOrDefault();
@@ -43,11 +56,11 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok
-        public static async Task<Browser> CreateAsync(Config? config = null)
+        public static async Task<Browser> CreateAsync(Config? config = null, CancellationToken token = default)
         {
             var browser = new Browser();
             browser.Config = config ?? new();
-            return await browser.StartAsync();
+            return await browser.StartAsync(token);
         }
 
         //ok
@@ -58,6 +71,7 @@ namespace NoDriver.Core.Runtime
                 Task.Delay(TimeSpan.FromSeconds(time), token));
         }
 
+        //ok 要測試
         private void HandleTargetUpdate(IEvent @event)
         {
             if (@event is Cdp.Target.TargetInfoChanged infoChanged)
@@ -65,20 +79,22 @@ namespace NoDriver.Core.Runtime
                 var targetInfo = infoChanged.TargetInfo;
                 var currentTab = Targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
                 if (currentTab != null)
+                {
+                    var currentTarget = currentTab.Target;
+
+                    //if (logger.IsEnabled(LogLevel.Debug))
+                    {
+                        var changes = Util.CompareTargetInfo(currentTarget, targetInfo);
+
+                        var changesString = new StringBuilder();
+                        foreach (var change in changes)
+                        {
+                            changesString.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
+                        }
+                        Console.WriteLine($"Target #{Targets.IndexOf(currentTab)} has changed: {changesString.ToString()}");
+                    }
                     currentTab.Target = targetInfo;
-
-                //if logger.getEffectiveLevel() <= 10:
-                //    changes = util.compare_target_info(current_target, target_info)
-                //    changes_string = ""
-                //    for change in changes:
-                //        key, old, new = change
-                //        changes_string += f"\n{key}: {old} => {new}\n"
-                //    logger.debug(
-                //        "target #%d has changed: %s"
-                //        % (self.targets.index(current_tab), changes_string)
-                //    )
-
-                //    current_tab._target = target_info
+                }
             }
             else if (@event is Cdp.Target.TargetCreated created)
             {
@@ -172,7 +188,8 @@ namespace NoDriver.Core.Runtime
             return connection;
         }
 
-        public async Task<Browser> StartAsync()
+        //ok
+        public async Task<Browser> StartAsync(CancellationToken token = default)
         {
             if (Config == null)
                 throw new Exception("use 'await Browser.CreateAsync()' to create a new instance.");
@@ -180,7 +197,7 @@ namespace NoDriver.Core.Runtime
             if (_process != null || _processPid != null)
             {
                 if (_process?.HasExited == true)
-                    return await CreateAsync(Config);
+                    return await CreateAsync(Config, token);
                 Console.WriteLine("Ignored! This call has no effect when already running.");
                 return this;
             }
@@ -222,14 +239,13 @@ namespace NoDriver.Core.Runtime
             }
 
             _http = new HTTPApi(Config.Host, Config.Port.Value);
-            //Util.GetRegisteredInstances().Add(this);
 
-            await Task.Delay(250);
+            await Task.Delay(TimeSpan.FromSeconds(0.25), token);
             for (var i = 0; i < 5; i++)
             {
                 try
                 {
-                    var data = await _http.GetAsync("version");
+                    var data = await _http.GetAsync("version", token);
                     Info = data;
                     break;
                 }
@@ -237,28 +253,28 @@ namespace NoDriver.Core.Runtime
                 {
                     if (i == 4)
                         Console.WriteLine("Could not start or connect to browser.");
-                    await Task.Delay(500);
+                    await Task.Delay(TimeSpan.FromSeconds(0.5), token);
                 }
             }
 
             if (Info == null)
                 throw new Exception("Failed to connect to browser. If running as root in Linux, you may need Sandbox=false.");
 
-            Connection = new Connection(Info.webSocketDebuggerUrl, browser: this);
+            Connection = new Tab(WebSocketUrl, browser: this);
 
             if (Config.AutodiscoverTargets)
             {
                 Console.WriteLine("Enabling autodiscover targets.");
 
-                Connection.AddHandler<Cdp.Target.TargetInfoChanged>(HandleTargetUpdate);
-                Connection.AddHandler<Cdp.Target.TargetCreated>(HandleTargetUpdate);
-                Connection.AddHandler<Cdp.Target.TargetDestroyed>(HandleTargetUpdate);
-                Connection.AddHandler<Cdp.Target.TargetCrashed>(HandleTargetUpdate);
+                Connection.AddHandler<Cdp.Target.TargetInfoChanged>((e, tab) => HandleTargetUpdate(e));
+                Connection.AddHandler<Cdp.Target.TargetCreated>((e, tab) => HandleTargetUpdate(e));
+                Connection.AddHandler<Cdp.Target.TargetDestroyed>((e, tab) => HandleTargetUpdate(e));
+                Connection.AddHandler<Cdp.Target.TargetCrashed>((e, tab) => HandleTargetUpdate(e));
 
-                await Connection.SendAsync(Cdp.Target.SetDiscoverTargets(true));
+                await Connection.SendAsync(Cdp.Target.SetDiscoverTargets(true), token: token);
             }
-            await UpdateTargetsAsync();
-            //await self
+            await UpdateTargetsAsync(token);
+            return this;
         }
 
         //ok 要測試

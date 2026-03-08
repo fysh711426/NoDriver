@@ -1,6 +1,6 @@
 ﻿using NoDriver.Core.Messaging;
+using OpenCvSharp;
 using System.Diagnostics;
-using System.Drawing;
 using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
@@ -1052,21 +1052,23 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public async Task VerifyCfAsync(string? templateImage = null, bool flash = false)
+        //ok 要測試
+        public async Task VerifyCfAsync(string? templateImage = null, bool flash = false, CancellationToken token = default)
         {
             if (Browser?.Config?.Expert == true)
                 throw new Exception("This function is useless in expert mode...");
 
-            var loc = await TemplateLocationAsync(templateImage);
+            var loc = await TemplateLocationAsync(templateImage, token);
             if (loc != null)
             {
-                await MouseClickAsync(loc.Value.X, loc.Value.Y);
-                if (flash) 
-                    await FlashPointAsync(loc.Value.X, loc.Value.Y);
+                await MouseClickAsync(loc.Value.X, loc.Value.Y, token: token);
+                if (flash)
+                    await FlashPointAsync(loc.Value.X, loc.Value.Y, token: token);
             }
         }
 
-        public async Task<(int X, int Y)?> TemplateLocationAsync(string? templateImage = null)
+        //ok 要測試
+        public async Task<(int X, int Y)?> TemplateLocationAsync(string? templateImage = null, CancellationToken token = default)
         {
             var screenPath = "screen.jpg";
             var cfTemplatePath = "cf_template.png";
@@ -1079,52 +1081,75 @@ namespace NoDriver.Core.Runtime
                         throw new FileNotFoundException($"{templateImage} was not found.");
                 }
 
-                await SaveScreenshotAsync(screenPath);
-                await WaitAsync(0.05);
+                await SaveScreenshotAsync(screenPath, token: token);
+                await WaitAsync(0.05, token);
 
-                using var im = Cv2.ImRead(screenPath);
-                using var imGray = new Mat();
-                Cv2.CvtColor(im, imGray, ColorConversionCodes.BGR2GRAY);
-
-                Mat template;
-                if (!string.IsNullOrWhiteSpace(templateImage))
+                using (var im = Cv2.ImRead(screenPath))
                 {
-                    template = Cv2.ImRead(templateImage);
+                    using (var imGray = new Mat())
+                    {
+                        Cv2.CvtColor(im, imGray, ColorConversionCodes.BGR2GRAY);
+
+                        var template = null as Mat;
+                        if (!string.IsNullOrWhiteSpace(templateImage))
+                        {
+                            template = Cv2.ImRead(templateImage);
+                        }
+                        else
+                        {
+                            File.WriteAllBytes(cfTemplatePath, Util.GetCfTemplate());
+                            template = Cv2.ImRead(cfTemplatePath);
+                        }
+
+                        using (var templateGray = new Mat())
+                        {
+                            Cv2.CvtColor(template, templateGray, ColorConversionCodes.BGR2GRAY);
+                            using (var match = new Mat())
+                            {
+                                Cv2.MatchTemplate(imGray, templateGray, match, TemplateMatchModes.CCoeffNormed);
+                                Cv2.MinMaxLoc(match, out var minV, out var maxV, out var minL, out var maxL);
+
+                                var xs = maxL.X;
+                                var ys = maxL.Y;
+
+                                var tmpW = templateGray.Width;
+                                var tmpH = templateGray.Height;
+
+                                var xe = xs + tmpW;
+                                var ye = ys + tmpH;
+
+                                var cx = (xs + xe) / 2;
+                                var cy = (ys + ye) / 2;
+
+                                return (cx, cy);
+                            }
+                        }
+                    }
                 }
-                else
-                {
-                    File.WriteAllBytes(cfTemplatePath, Util.GetCfTemplate());
-                    template = Cv2.ImRead(cfTemplatePath);
-                }
-
-                using var templateGray = new Mat();
-                Cv2.CvtColor(template, templateGray, ColorConversionCodes.BGR2GRAY);
-
-                using var match = new Mat();
-                Cv2.MatchTemplate(imGray, templateGray, match, TemplateMatchModes.CCoeffNormed);
-
-                Cv2.MinMaxLoc(match, out _, out _, out _, out Point maxL);
-
-                int tmpW = templateGray.Width;
-                int tmpH = templateGray.Height;
-                int cx = maxL.X + tmpW / 2;
-                int cy = maxL.Y + tmpH / 2;
-
-                return (cx, cy);
-            }
-            catch (Exception ex)
-            {
-                //Logger.LogError(ex, "OpenCV template matching failed.");
-                throw;
             }
             finally
             {
-                if (File.Exists(screenPath))
-                    File.Delete(screenPath);
+                try
+                {
+                    if (File.Exists(screenPath))
+                        File.Delete(screenPath);
+                }
+                catch
+                {
+                    Console.WriteLine("Could not delete temporary screenshot.");
+                }
+
                 if (string.IsNullOrWhiteSpace(templateImage))
                 {
-                    if (File.Exists(cfTemplatePath))
-                        File.Delete(cfTemplatePath);
+                    try
+                    {
+                        if (File.Exists(cfTemplatePath))
+                            File.Delete(cfTemplatePath);
+                    }
+                    catch
+                    {
+                        Console.WriteLine($"Could not unlink template file {cfTemplatePath}.");
+                    }
                 }
             }
         }
