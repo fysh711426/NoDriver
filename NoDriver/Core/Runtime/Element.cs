@@ -56,11 +56,11 @@ namespace NoDriver.Core.Runtime
                 if (ShadowRoots?.Count > 0)
                 {
                     var root = ShadowRoots[0];
-                    if (root.ShadowRootType == Cdp.DOM.ShadowRootType.Open)
+                    if (root.ShadowRootType == Cdp.DOM.ShadowRootType.OPEN)
                     {
                         if (root.Children != null)
                         {
-                            foreach(var child in root.Children)
+                            foreach (var child in root.Children)
                             {
                                 children.Add(new Element(child, _tab));
                             }
@@ -477,14 +477,14 @@ namespace NoDriver.Core.Runtime
         public async Task<List<Element>> QuerySelectorAllAsync(string selector, CancellationToken token = default)
         {
             await UpdateAsync(token: token);
-            return await _tab.QuerySelectorAllAsync(selector, node: this, token: token);
+            return await _tab.QuerySelectorAllAsync(selector, this, token: token);
         }
 
         //ok 要測試
         public async Task<Element?> QuerySelectorAsync(string selector, CancellationToken token = default)
         {
             await UpdateAsync(token: token);
-            return await _tab.QuerySelectorAsync(selector, node: this, token: token);
+            return await _tab.QuerySelectorAsync(selector, this, token: token);
         }
 
         //ok 檢查是否正常 Tab 也有相同函數

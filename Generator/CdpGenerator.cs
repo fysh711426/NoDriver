@@ -1,6 +1,7 @@
 ﻿using Generator.Models;
 using System.Security;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Generator
 {
@@ -131,15 +132,17 @@ namespace Generator
                 sb.AppendLine($"{indent}    {csharpType} Value");
                 sb.AppendLine($"{indent}) : Core.PrimitiveType<{csharpType}>(Value)");
                 sb.AppendLine($"{indent}{{");
+                GenerateEnums(sb, type.Enum, indentLevel + 1);
                 sb.AppendLine($"{indent}}}");
             }
             // 型別是陣列 Array
             else if (type.Kind == TypeKind.Array)
             {
+                var csharpType = GetCSharpType(type.Items?.Type, type.Items?.Ref, null, domainName);
                 sb.AppendLine($"{indent}[JsonConverter(typeof(Core.ArrayTypeConverter))]");
                 sb.AppendLine($"{indent}public record {typeName}(");
-                sb.AppendLine($"{indent}    IReadOnlyCollection<JsonNode> Items");
-                sb.AppendLine($"{indent}) : Core.IArrayType");
+                sb.AppendLine($"{indent}    IReadOnlyList<{csharpType}> Items");
+                sb.AppendLine($"{indent}) : Core.ArrayType<{csharpType}>(Items)");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}}}");
             }
@@ -360,6 +363,18 @@ namespace Generator
             throw new ArgumentOutOfRangeException($"({nameof(type)}, {nameof(@ref)})");
         }
 
+        protected static void GenerateEnums(StringBuilder sb, List<string> enums, int indentLevel)
+        {
+            var indent = new string(' ', indentLevel * 4);
+
+            foreach (var @enum in enums)
+            {
+                var enumName = ToSnakeCase(@enum).ToUpperInvariant();
+
+                sb.AppendLine($@"{indent}public static readonly string {enumName} = ""{@enum}"";");
+            }
+        }
+
         // ----- Utils -----
         protected static string ToFirstUpper(string text)
         {
@@ -373,6 +388,14 @@ namespace Generator
             if (string.IsNullOrEmpty(text))
                 return text;
             return char.ToLowerInvariant(text[0]) + text.Substring(1);
+        }
+
+        protected static string ToSnakeCase(string text)
+        {
+            text = Regex.Replace(text, @"([A-Z]+)([A-Z][a-z])", "$1_$2");
+            text = Regex.Replace(text, @"([a-z\d])([A-Z])", "$1_$2");
+            text = text.Replace("-", "_");
+            return text.ToLower();
         }
 
         protected static string EscapeKeyword(string name)

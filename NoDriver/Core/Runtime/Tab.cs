@@ -153,18 +153,18 @@ namespace NoDriver.Core.Runtime
             var items = new List<Element>();
             if (includeFrames)
             {
-                var frames = await QuerySelectorAllAsync("iframe", null, token: token);
+                var frames = await QuerySelectorAllAsync("iframe", token: token);
                 foreach (var frame in frames)
                 {
                     items.AddRange(await frame.QuerySelectorAllAsync(selector, token: token));
                 }
             }
 
-            items.AddRange(await QuerySelectorAllAsync(selector, null, token: token));
+            items.AddRange(await QuerySelectorAllAsync(selector, token: token));
             while (items.Count == 0)
             {
                 await WaitAsync(token: token);
-                items.AddRange(await QuerySelectorAllAsync(selector, null, token: token));
+                items.AddRange(await QuerySelectorAllAsync(selector, token: token));
                 if (sw.Elapsed.TotalSeconds > timeout)
                     return items;
                 await WaitAsync(0.5, token);
@@ -241,7 +241,7 @@ namespace NoDriver.Core.Runtime
         }
 
         // ok 要測試
-        private async Task<List<Element>> QuerySelectorAllAsync(string selector, Element? node = null, bool isRetry = false, CancellationToken token = default)
+        private async Task<List<Element>> QuerySelectorAllAsync(string selector, Element? node, bool isRetry = false, CancellationToken token = default)
         {
             selector = selector.Trim();
 
@@ -307,7 +307,7 @@ namespace NoDriver.Core.Runtime
         }
 
         // ok 要測試
-        private async Task<Element?> QuerySelectorAsync(string selector, Element? node = null, bool isRetry = false, CancellationToken token = default)
+        private async Task<Element?> QuerySelectorAsync(string selector, Element? node, bool isRetry = false, CancellationToken token = default)
         {
             selector = selector.Trim();
 

@@ -4,6 +4,6 @@ namespace NoDriver.Core
 {
     public interface IObjectType
     {
-        public IReadOnlyDictionary<string, JsonNode?> Properties { get; }
+        IReadOnlyDictionary<string, JsonNode?> Properties { get; }
     }
 }

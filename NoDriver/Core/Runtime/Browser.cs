@@ -1,8 +1,6 @@
 ﻿using Silk.NET.Maths;
 using Silk.NET.SDL;
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using System.Text.Json;
 
 namespace NoDriver.Core.Runtime
@@ -170,7 +168,7 @@ namespace NoDriver.Core.Runtime
 
             await WaitAsync(0.5);
 
-            var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetIdId == targetId);
+            var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == targetId);
             return connection;
         }
 
@@ -266,8 +264,8 @@ namespace NoDriver.Core.Runtime
         public async Task GrantAllPermissionsAsync()
         {
             var permissions = Enum.GetValues(typeof(PermissionType)).Cast<PermissionType>().ToList();
-            permissions.Remove(PermissionType.Flash);
-            permissions.Remove(PermissionType.CapturedSurfaceControl);
+            permissions.Remove(Cdp.Browser.PermissionType.Flash);
+            permissions.Remove(Cdp.Browser.PermissionType.CapturedSurfaceControl);
             await Connection.SendAsync(Cdp.Browser.GrantPermissions(permissions));
         }
 
