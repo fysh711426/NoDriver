@@ -887,26 +887,31 @@ namespace NoDriver.Core.Runtime
             _downloadBehavior = new List<string> { "allow", fullPath };
         }
 
-        public async Task<List<Element>> GetAllLinkedSourcesAsync()
+        //ok 要測試
+        public async Task<List<Element>> GetAllLinkedSourcesAsync(CancellationToken token = default)
         {
-            return await QuerySelectorAllAsync("a,link,img,script,meta");
+            var allAssets = await QuerySelectorAllAsync("a,link,img,script,meta", token: token);
+            return allAssets.Select(it => new Element(it.Node, this)).ToList();
         }
 
-        public async Task<List<string>> GetAllUrlsAsync(bool absolute = true)
+        //ok 要測試
+        public async Task<List<string>> GetAllUrlsAsync(bool absolute = true, CancellationToken token = default)
         {
             var res = new List<string>();
-            var allAssets = await QuerySelectorAllAsync("a,link,img,script,meta");
+            var allAssets = await QuerySelectorAllAsync("a,link,img,script,meta", token: token);
 
             foreach (var asset in allAssets)
             {
                 if (!absolute)
                 {
-                    // 假設 Element 內有對應的屬性或可以從 Attrs 取出
-                    res.Add(asset.Src ?? asset.Href);
+                    var rawUrl = 
+                        asset.Attrs.GetValueOrDefault("src") ??
+                        asset.Attrs.GetValueOrDefault("href");
+                    if (!string.IsNullOrWhiteSpace(rawUrl))
+                        res.Add(rawUrl);
                 }
                 else
                 {
-                    // 假設 asset.Attrs 是一個 Dictionary<string, string>
                     foreach (var kvp in asset.Attrs)
                     {
                         var k = kvp.Key;
@@ -914,6 +919,9 @@ namespace NoDriver.Core.Runtime
 
                         if (k == "src" || k == "href")
                         {
+                            if (string.IsNullOrWhiteSpace(v))
+                                continue;
+
                             if (v.Contains("#")) 
                                 continue;
 
@@ -1065,8 +1073,11 @@ namespace NoDriver.Core.Runtime
             try
             {
                 if (!string.IsNullOrWhiteSpace(templateImage))
+                {
+                    templateImage = Path.GetFullPath(templateImage);
                     if (!File.Exists(templateImage))
                         throw new FileNotFoundException($"{templateImage} was not found.");
+                }
 
                 await SaveScreenshotAsync(screenPath);
                 await WaitAsync(0.05);

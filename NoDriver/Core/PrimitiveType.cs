@@ -1,4 +1,6 @@
-﻿namespace NoDriver.Core
+﻿using System.Reflection;
+
+namespace NoDriver.Core
 {
     public interface IPrimitiveType : IType
     {
@@ -9,10 +11,13 @@
     {
         object? IPrimitiveType.RawValue => Value;
 
-        public static bool operator ==(PrimitiveType<TValue>? left, TValue? right) =>
-            left is null ? right is null : EqualityComparer<TValue>.Default.Equals(left.Value, right);
-        public static bool operator !=(PrimitiveType<TValue>? left, TValue? right) => !(left == right);
-        public static bool operator ==(TValue? left, PrimitiveType<TValue>? right) => right == left;
-        public static bool operator !=(TValue? left, PrimitiveType<TValue>? right) => !(left == right);
+        public static List<TSub> GetEnums<TSub>() where TSub : PrimitiveType<TValue>
+        {
+            return typeof(TSub)
+                .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+                .Where(f => typeof(TSub).IsAssignableFrom(f.FieldType))
+                .Select(f => (TSub)f.GetValue(null)!)
+                .ToList();
+        }
     }
 }

@@ -286,7 +286,7 @@ namespace NoDriver.Core.Runtime
                 if (quads == null || quads.Count == 0)
                     throw new Exception($"Could not find position for {this}");
 
-                var pos = new Position(quads[0]);
+                var pos = new Position(quads[0].Items);
                 if (abs)
                 {
                     async Task<double> getValue(string expression)

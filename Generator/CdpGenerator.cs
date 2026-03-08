@@ -132,7 +132,7 @@ namespace Generator
                 sb.AppendLine($"{indent}    {csharpType} Value");
                 sb.AppendLine($"{indent}) : Core.PrimitiveType<{csharpType}>(Value)");
                 sb.AppendLine($"{indent}{{");
-                GenerateEnums(sb, type.Enum, indentLevel + 1);
+                GenerateEnums(sb, type.Enum, typeName, indentLevel + 1);
                 sb.AppendLine($"{indent}}}");
             }
             // 型別是陣列 Array
@@ -363,7 +363,7 @@ namespace Generator
             throw new ArgumentOutOfRangeException($"({nameof(type)}, {nameof(@ref)})");
         }
 
-        protected static void GenerateEnums(StringBuilder sb, List<string> enums, int indentLevel)
+        protected static void GenerateEnums(StringBuilder sb, List<string> enums, string className, int indentLevel)
         {
             var indent = new string(' ', indentLevel * 4);
 
@@ -371,7 +371,7 @@ namespace Generator
             {
                 var enumName = ToSnakeCase(@enum).ToUpperInvariant();
 
-                sb.AppendLine($@"{indent}public static readonly string {enumName} = ""{@enum}"";");
+                sb.AppendLine($@"{indent}public static readonly {className} {enumName} = new(""{@enum}"");");
             }
         }
 

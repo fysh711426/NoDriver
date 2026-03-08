@@ -261,12 +261,14 @@ namespace NoDriver.Core.Runtime
             //await self
         }
 
-        public async Task GrantAllPermissionsAsync()
+        //ok 要測試
+        public async Task GrantAllPermissionsAsync(CancellationToken token = default)
         {
-            var permissions = Enum.GetValues(typeof(PermissionType)).Cast<PermissionType>().ToList();
-            permissions.Remove(Cdp.Browser.PermissionType.Flash);
-            permissions.Remove(Cdp.Browser.PermissionType.CapturedSurfaceControl);
-            await Connection.SendAsync(Cdp.Browser.GrantPermissions(permissions));
+            var permissions = Cdp.Browser.PermissionType.GetEnums<Cdp.Browser.PermissionType>();
+            //permissions.Remove(Cdp.Browser.PermissionType.FLASH);
+            permissions.Remove(Cdp.Browser.PermissionType.CAPTURED_SURFACE_CONTROL);
+            if (Connection != null)
+                await Connection.SendAsync(Cdp.Browser.GrantPermissions(permissions), token: token);
         }
 
         //ok

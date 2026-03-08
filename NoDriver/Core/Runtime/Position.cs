@@ -17,7 +17,7 @@
        
         public (double X, double Y) Center => (Left + Width / 2.0, Top + Height / 2.0);
 
-        public Position(List<double> points) :
+        public Position(IReadOnlyList<double> points) :
             base(points)
         {
             Left = points[0];
