@@ -1,12 +1,9 @@
 ﻿using System.Buffers;
-using System.Diagnostics;
-using System.IO.Pipelines;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using System.Threading;
 
 namespace NoDriver.Core.Runtime
 {
@@ -118,11 +115,10 @@ namespace NoDriver.Core.Runtime
 
             using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token))
             {
-                var clientReader = PipeReader.Create(clientStream);
                 try
                 {
                     timeoutCts.CancelAfter(TimeSpan.FromSeconds(REQUEST_TIMEOUT));
-                    var line = await ReadLineAsync(clientReader, MAX_LINE_LENGTH, timeoutCts.Token);
+                    var line = await ReadLineAsync(clientStream, MAX_LINE_LENGTH, timeoutCts.Token);
                     if (string.IsNullOrEmpty(line))
                         return;
 
@@ -146,7 +142,7 @@ namespace NoDriver.Core.Runtime
                     while (true)
                     {
                         timeoutCts.CancelAfter(TimeSpan.FromSeconds(REQUEST_TIMEOUT));
-                        var header = await ReadLineAsync(clientReader, MAX_LINE_LENGTH, timeoutCts.Token);
+                        var header = await ReadLineAsync(clientStream, MAX_LINE_LENGTH, timeoutCts.Token);
                         if (string.IsNullOrEmpty(header) || header == "\r\n" || header == "\n")
                             break;
                     }
@@ -196,11 +192,10 @@ namespace NoDriver.Core.Runtime
 
                             await WriteTextAsync(remoteStream, connectRequest, timeoutCts.Token);
 
-                            var remoteReader = PipeReader.Create(remoteStream);
                             try
                             {
                                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(REQUEST_TIMEOUT));
-                                var responseLine = await ReadLineAsync(remoteReader, MAX_LINE_LENGTH, timeoutCts.Token);
+                                var responseLine = await ReadLineAsync(remoteStream, MAX_LINE_LENGTH, timeoutCts.Token);
                                 if (string.IsNullOrEmpty(responseLine))
                                 {
                                     Console.WriteLine("No response from upstream proxy.");
@@ -211,7 +206,7 @@ namespace NoDriver.Core.Runtime
                                 while (true)
                                 {
                                     timeoutCts.CancelAfter(TimeSpan.FromSeconds(REQUEST_TIMEOUT));
-                                    var header = await ReadLineAsync(remoteReader, MAX_LINE_LENGTH, timeoutCts.Token);
+                                    var header = await ReadLineAsync(remoteStream, MAX_LINE_LENGTH, timeoutCts.Token);
                                     if (string.IsNullOrEmpty(header) || header == "\r\n" || header == "\n")
                                         break;
                                 }
@@ -234,27 +229,24 @@ namespace NoDriver.Core.Runtime
                             catch (OperationCanceledException)
                             {
                                 Console.WriteLine("Timeout reading upstream proxy response.");
-                                await WriteTextAsync(clientStream, "HTTP/1.1 504 Gateway Timeout\r\n\r\n");
+                                await WriteTextAsync(clientStream, "HTTP/1.1 504 Gateway Timeout\r\n\r\n", CancellationToken.None);
                             }
                             catch (InvalidDataException ex)
                             {
                                 Console.WriteLine(ex.Message);
                             }
-                            finally
-                            {
-                                await remoteReader.CompleteAsync();
-                            }
                         }
                         finally
                         {
-                            remoteStream?.Dispose();
+                            if (remoteStream != null)
+                                await remoteStream.DisposeAsync();
                         }
                     }
                 }
                 catch (OperationCanceledException)
                 {
                     Console.WriteLine("Client request timeout.");
-                    await WriteTextAsync(clientStream, "HTTP/1.1 408 Request Timeout\r\n\r\n");
+                    await WriteTextAsync(clientStream, "HTTP/1.1 408 Request Timeout\r\n\r\n", CancellationToken.None);
                 }
                 catch (InvalidDataException ex)
                 {
@@ -270,10 +262,6 @@ namespace NoDriver.Core.Runtime
                     }
                     catch { }
                 }
-                finally
-                {
-                    await clientReader.CompleteAsync();
-                }
             }
         }
 
@@ -282,35 +270,29 @@ namespace NoDriver.Core.Runtime
 
         }
 
-        private async Task<string> ReadLineAsync(PipeReader reader, int limit, CancellationToken token)
+        private async Task<string> ReadLineAsync(Stream stream, int limit, CancellationToken token)
         {
-            while (true)
+            var count = 0;
+            var buffer = ArrayPool<byte>.Shared.Rent(limit);
+            try
             {
-                var result = await reader.ReadAsync(token);
-                var buffer = result.Buffer;
-
-                var position = buffer.PositionOf((byte)'\n');
-                if (position != null)
+                while (count < limit)
                 {
-                    var linePosition = position.Value;
-                    if (buffer.TryGet(ref linePosition, out _, advance: true))
-                    {
-                        var line = buffer.Slice(0, linePosition);
-                        reader.AdvanceTo(linePosition);
-                        return Encoding.UTF8.GetString(line);
-                    }
+                    var read = await stream.ReadAsync(buffer, count, 1, token);
+                    if (read == 0) 
+                        break;
+
+                    var b = buffer[0];
+                    count++;
+
+                    if (b == (byte)'\n')
+                        break;
                 }
-
-                if (buffer.Length > limit)
-                    throw new InvalidDataException($"Oversized header line: {limit} bytes.");
-
-                reader.AdvanceTo(buffer.Start, buffer.End);
-
-                if (result.IsCompleted)
-                {
-                    reader.AdvanceTo(buffer.End);
-                    return Encoding.UTF8.GetString(buffer);
-                }
+                return Encoding.ASCII.GetString(buffer, 0, count);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
             }
         }
 
