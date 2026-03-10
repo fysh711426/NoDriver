@@ -1,9 +1,13 @@
 ﻿using System.Buffers;
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Reflection.PortableExecutable;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Threading;
+using static NoDriver.Cdp.Browser;
 
 namespace NoDriver.Core.Runtime
 {
@@ -157,8 +161,8 @@ namespace NoDriver.Core.Runtime
                             try
                             {
                                 await remoteClient.ConnectAsync(FwHost, FwPort, timeoutCts.Token);
-
                                 remoteStream = remoteClient.GetStream();
+
                                 if (UseSsl)
                                 {
                                     var sslStream = new SslStream(remoteStream, false, (sender, cert, chain, err) => true);
@@ -267,7 +271,148 @@ namespace NoDriver.Core.Runtime
 
         private async Task HandleSocksRequestAsync(NetworkStream clientStream, CancellationToken token)
         {
+            byte ATYP_IPv4 = 0x01;
+            byte ATYP_IPv6 = 0x04;
+            byte ATYP_DNS = 0x03;
 
+            try
+            {
+                byte version, numMethods = 0;
+                try
+                {
+                    var bytes = await ReadBytesAsync(clientStream, 2, token);
+                    version = bytes[0];
+                    numMethods = bytes[1];
+                }
+                catch
+                {
+                    return;
+                }
+
+                await ReadBytesAsync(clientStream, numMethods, token);
+
+                await clientStream.WriteAsync(new byte[] { version, 0 }, token);
+
+                byte cmd, resv, atyp = 0;
+                {
+                    var bytes = await ReadBytesAsync(clientStream, 4, token);
+                    version = bytes[0];
+                    cmd = bytes[1];
+                    resv = bytes[2];
+                    atyp = bytes[3];
+                }
+
+                var ipAddr = "";
+                var hostname = "";
+
+                if (atyp == ATYP_IPv4)
+                {
+                    var ipPacked = await ReadBytesAsync(clientStream, 4, token);
+                    ipAddr = new IPAddress(ipPacked).ToString();
+                }
+                else if (atyp == ATYP_IPv6)
+                {
+                    var ipPacked = await ReadBytesAsync(clientStream, 16, token);
+                    ipAddr = new IPAddress(ipPacked).ToString();
+                }
+                else if (atyp == ATYP_DNS)
+                {
+                    var hostnameLenPacked = await ReadBytesAsync(clientStream, 1, token);
+                    var hostnameLen = hostnameLenPacked[0];
+                    var hostnamePacked = await ReadBytesAsync(clientStream, hostnameLen, token);
+                    hostname = Encoding.UTF8.GetString(hostnamePacked);
+                }
+
+                var portPacked = await ReadBytesAsync(clientStream, 2, token);
+                var port = BinaryPrimitives.ReadUInt16BigEndian(portPacked);
+
+                using (var remoteClient = new TcpClient())
+                {
+                    var remoteStream = null as Stream;
+                    try
+                    {
+                        await remoteClient.ConnectAsync(FwHost, FwPort, token);
+                        remoteStream = remoteClient.GetStream();
+
+                        if (UseSsl)
+                        {
+                            var sslStream = new SslStream(remoteStream, false, (sender, cert, chain, err) => true);
+                            await sslStream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                            {
+                                TargetHost = FwHost,
+                                ClientCertificates = ClientCertificates,
+                                EnabledSslProtocols =
+                                    System.Security.Authentication.SslProtocols.Tls12 |
+                                    System.Security.Authentication.SslProtocols.Tls13,
+                                CertificateRevocationCheckMode = X509RevocationMode.NoCheck
+                            }, token);
+                            remoteStream = sslStream;
+                        }
+
+                        await remoteStream.WriteAsync(new byte[] { version, 1, 2 }, token);
+
+                        byte serverVersion, serverAuthMethod = 0;
+                        {
+                            var bytes = await ReadBytesAsync(remoteStream, 2, token);
+                            serverVersion = bytes[0];
+                            serverAuthMethod = bytes[1];
+                        }
+
+                        if (serverAuthMethod == 2)
+                        {
+                            var uBytes = Encoding.UTF8.GetBytes(Username);
+                            var pBytes = Encoding.UTF8.GetBytes(Password);
+
+                            var authTicket = new byte[3 + uBytes.Length + pBytes.Length];
+                            authTicket[0] = 1;
+                            authTicket[1] = (byte)uBytes.Length;
+                            Buffer.BlockCopy(uBytes, 0, authTicket, 2, uBytes.Length);
+                            authTicket[2 + uBytes.Length] = (byte)pBytes.Length;
+                            Buffer.BlockCopy(pBytes, 0, authTicket, 3 + uBytes.Length, pBytes.Length);
+
+                            await remoteStream.WriteAsync(authTicket, 0, authTicket.Length, token);
+
+                            byte ver, result = 0;
+                            {
+                                var bytes = await ReadBytesAsync(remoteStream, 2, token);
+                                ver = bytes[0];
+                                result = bytes[1];
+                            }
+
+                            if (result != 0) 
+                                throw new Exception($"Socks authentication error: {result}");
+                        }
+
+                        using (var reqMs = new MemoryStream())
+                        {
+                            reqMs.Write(reqHeader, 0, reqHeader.Length);
+                            if (atyp == 3) 
+                                reqMs.WriteByte((byte)targetHostBytes.Length);
+                            reqMs.Write(targetHostBytes, 0, targetHostBytes.Length);
+                            if (BitConverter.IsLittleEndian) Array.Reverse(portBytes); // 轉回 Network Endian (Big)
+                            reqMs.Write(portBytes, 0, portBytes.Length);
+
+                            await remoteStream.WriteAsync(reqMs.ToArray(), 0, (int)reqMs.Length, cancellationToken);
+                        }
+
+                        await remoteStream.WriteAsync(new byte[] { version, cmd, resv, atyp }, token);
+                        if (atyp == ATYP_DNS)
+                            await remoteStream.WriteAsync(new byte[] { hostnameLen }, token);
+                        await remoteStream.WriteAsync(portBytes, 0, 2, token);
+
+                        await PipeAsync(clientStream, remoteStream, token);
+                    }
+                    finally
+                    {
+                        if (remoteStream != null)
+                            await remoteStream.DisposeAsync();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error handling Socks proxy request: {ex.Message}");
+            }
         }
 
         private async Task<string> ReadLineAsync(Stream stream, int limit, CancellationToken token)
@@ -282,13 +427,13 @@ namespace NoDriver.Core.Runtime
                     if (read == 0) 
                         break;
 
-                    var b = buffer[0];
+                    var b = buffer[count];
                     count++;
 
                     if (b == (byte)'\n')
                         break;
                 }
-                return Encoding.ASCII.GetString(buffer, 0, count);
+                return Encoding.UTF8.GetString(buffer, 0, count);
             }
             finally
             {
@@ -300,6 +445,20 @@ namespace NoDriver.Core.Runtime
         {
             var bytes = Encoding.UTF8.GetBytes(text);
             await stream.WriteAsync(bytes, 0, bytes.Length, token);
+        }
+
+        private async Task<byte[]> ReadBytesAsync(Stream stream, int size, CancellationToken token)
+        {
+            var buffer = new byte[size];
+            var count = 0;
+            while (count < size)
+            {
+                var read = await stream.ReadAsync(buffer, count, size - count, token);
+                if (read == 0) 
+                    throw new EndOfStreamException("Socket connection closed unexpectedly.");
+                count += read;
+            }
+            return buffer;
         }
 
         private async Task PipeAsync(Stream stream1, Stream stream2, CancellationToken token)
