@@ -22,18 +22,18 @@ namespace NoDriver.Core.Runtime
         public bool UseSsl { get; private set; } = false;
         public string Username { get; private set; } = "";
         public string Password { get; private set; } = "";
-        public string ProxyServerUrl { get; private set; } = "";
+        public string ProxyServer { get; private set; } = "";
         public X509Certificate2Collection? ClientCertificates { get; private set; } = null;
 
-        public ProxyForwarder(string proxyServerUrl, X509Certificate2Collection? clientCertificates = null)
+        public ProxyForwarder(string proxyServer, X509Certificate2Collection? clientCertificates = null)
         {
-            ProxyServerUrl = "";
+            ProxyServer = "";
             ClientCertificates = clientCertificates;
             
-            if (!Uri.TryCreate(proxyServerUrl, UriKind.Absolute, out var url) || string.IsNullOrWhiteSpace(url.Scheme))
+            if (!Uri.TryCreate(proxyServer, UriKind.Absolute, out var url) || string.IsNullOrWhiteSpace(url.Scheme))
             {
-                if (proxyServerUrl.Contains(":"))
-                    ProxyServerUrl = proxyServerUrl;
+                if (proxyServer.Contains(":"))
+                    ProxyServer = proxyServer;
                 return;
             }
 
@@ -42,7 +42,7 @@ namespace NoDriver.Core.Runtime
 
             if (string.IsNullOrWhiteSpace(url.UserInfo))
             {
-                ProxyServerUrl = url.ToString();
+                ProxyServer = url.ToString();
                 return;
             }
 
@@ -57,12 +57,12 @@ namespace NoDriver.Core.Runtime
             Password = credentials.Length > 1 ? Uri.UnescapeDataString(credentials[1]) : "";
 
             if (Scheme.StartsWith("http"))
-                ProxyServerUrl = $"http://{Host}:{Port}";
+                ProxyServer = $"http://{Host}:{Port}";
             else
-                ProxyServerUrl = $"{Scheme}://{Host}:{Port}";
+                ProxyServer = $"{Scheme}://{Host}:{Port}";
 
-            Console.WriteLine($"{Scheme} proxy with authentication is requested: {ProxyServerUrl}");
-            Console.WriteLine($"Starting forward proxy on {Host}:{Port} which forwards to {ProxyServerUrl}");
+            Console.WriteLine($"{Scheme} proxy with authentication is requested: {ProxyServer}");
+            Console.WriteLine($"Starting forward proxy on {Host}:{Port} which forwards to {ProxyServer}");
 
             _ = ListenAsync(_cts.Token);
         }

@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Maths;
 using Silk.NET.SDL;
 using System.Diagnostics;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 
@@ -156,6 +157,7 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        //ok 要測試
         public async Task<Tab> CreateContextAsync(
             string url = "chrome://welcome",
             bool newTab = false,
@@ -164,27 +166,34 @@ namespace NoDriver.Core.Runtime
             string? proxyServer = null,
             List<string>? proxyBypassList = null,
             List<string>? originsWithUniversalNetworkAccess = null,
-            dynamic? proxySslContext= null)
+            X509Certificate2Collection? clientCertificates = null, 
+            CancellationToken token = default)
         {
+            if (Connection == null)
+                throw new InvalidOperationException("Connection cannot be null.");
+
             if (!string.IsNullOrWhiteSpace(proxyServer))
             {
-                var fw = new Util.ProxyForwarder(proxyServer, proxySslContext);
-                proxyServer = fw.ProxyServer;
+                var forwarder = new ProxyForwarder(proxyServer, clientCertificates);
+                proxyServer = forwarder.ProxyServer;
             }
 
-            var ctx = await Connection.SendAsync(Cdp.Target.CreateBrowserContext(
+            var ctxResult = await Connection.SendAsync(Cdp.Target.CreateBrowserContext(
                 DisposeOnDetach: disposeOnDetach,
                 ProxyServer: proxyServer,
-                ProxyBypassList: proxyBypassList,
+                ProxyBypassList: proxyBypassList?.Count > 0 ?
+                    string.Join(';', proxyBypassList) : null,
                 OriginsWithUniversalNetworkAccess: originsWithUniversalNetworkAccess
-            ));
+            ), token: token);
 
-            var targetId = await Connection.SendAsync(
-                Cdp.Target.CreateTarget(url, BrowserContextId: ctx, NewWindow: newWindow, ForTab: newTab));
+            var result = await Connection.SendAsync(
+                Cdp.Target.CreateTarget(url, BrowserContextId: ctxResult.BrowserContextId, NewWindow: newWindow, ForTab: newTab), token: token);
 
-            await WaitAsync(0.5);
+            await WaitAsync(0.5, token);
 
-            var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == targetId);
+            var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == result.TargetId);
+            if (connection == null)
+                throw new InvalidOperationException("Targets connection cannot be null.");
             return connection;
         }
 
