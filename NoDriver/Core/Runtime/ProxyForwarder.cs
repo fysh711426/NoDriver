@@ -10,7 +10,8 @@ namespace NoDriver.Core.Runtime
 {
     public class ProxyForwarder : IDisposable, IAsyncDisposable
     {
-        private TcpListener? _server = null;
+        private TcpListener? _server;
+        private Task _listenerTask = Task.CompletedTask;
         private CancellationTokenSource _cts = new CancellationTokenSource();
 
         public string Host { get; private set; } = "";
@@ -64,34 +65,45 @@ namespace NoDriver.Core.Runtime
             Console.WriteLine($"{Scheme} proxy with authentication is requested: {ProxyServer}");
             Console.WriteLine($"Starting forward proxy on {Host}:{Port} which forwards to {ProxyServer}");
 
-            _ = ListenAsync(_cts.Token);
+            _listenerTask = ListenLoopAsync(_cts.Token);
         }
 
-        private async Task ListenAsync(CancellationToken token)
+        private async Task ListenLoopAsync(CancellationToken token)
         {
             try
             {
                 _server = new TcpListener(IPAddress.Parse(Host), Port);
                 _server.Start();
 
-                while (true)
+                while (!token.IsCancellationRequested)
                 {
-                    var client = await _server.AcceptTcpClientAsync(token);
-                    _ = HandleRequestAsync(client, token);
+                    try
+                    {
+                        var client = await _server.AcceptTcpClientAsync(token);
+                        _ = HandleRequestAsync(client, token);
+                    }
+                    catch (OperationCanceledException) { }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Listener exception: {ex.Message}");
+                    }
                 }
             }
-            catch (OperationCanceledException) {}
             catch (Exception ex)
             {
-                Console.WriteLine($"Listener exception: {ex.Message}");
+                Console.WriteLine($"Failed to start listener: {ex.Message}");
+            }
+            finally
+            {
+                _server?.Stop();
             }
         }
 
         private async Task HandleRequestAsync(TcpClient client, CancellationToken token)
         {
-            using (client)
+            try
             {
-                try
+                using (client)
                 {
                     using (var clientStream = client.GetStream())
                     {
@@ -101,10 +113,10 @@ namespace NoDriver.Core.Runtime
                             await HandleHttpRequestAsync(clientStream, token);
                     }
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error handling request: {ex.Message}");
-                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error handling request: {ex.Message}");
             }
         }
 
@@ -502,6 +514,9 @@ namespace NoDriver.Core.Runtime
 
         public async ValueTask DisposeAsync()
         {
+            _cts.Cancel();
+            await _listenerTask;
+
             Dispose(true);
             GC.SuppressFinalize(this);
             await Task.CompletedTask;

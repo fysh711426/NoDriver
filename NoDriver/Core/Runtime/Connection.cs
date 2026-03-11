@@ -1,6 +1,8 @@
 ﻿using NoDriver.Core.Messaging;
 using NoDriver.Core.Tools;
+using System.Buffers;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
@@ -269,7 +271,7 @@ namespace NoDriver.Core.Runtime
 
         private async Task ListenLoopAsync(CancellationToken token)
         {
-            var buffer = new byte[_receiveBufferSize];
+            var buffer = ArrayPool<byte>.Shared.Rent(_receiveBufferSize);
             try
             {
                 using (var ms = new MemoryStream())
@@ -307,6 +309,10 @@ namespace NoDriver.Core.Runtime
             catch (Exception ex)
             {
                 Console.WriteLine($"Error receiving websocket response: {ex.Message}");
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
             }
         }
 
