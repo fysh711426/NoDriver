@@ -2,7 +2,6 @@
 using NoDriver.Core.Tools;
 using System.Buffers;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
@@ -15,10 +14,10 @@ namespace NoDriver.Core.Runtime
     {
         private static readonly int _receiveBufferSize = 8192 * 4;
 
-        private Task? _listenerTask = null;
-        private CancellationTokenSource? _cts = null;
         private int _messageIdCounter = 0;
-
+        private CancellationTokenSource? _cts = null;
+        private Task _listenerTask = Task.CompletedTask;
+        
         public string WebSocketUrl { get; } = "";
         public Browser? Browser { get; set; } = null;
         public ClientWebSocket? WebSocket { get; private set; } = null;
@@ -53,7 +52,7 @@ namespace NoDriver.Core.Runtime
             try
             {
                 await WebSocket.ConnectAsync(new Uri(WebSocketUrl), token);
-                _listenerTask = Task.Run(async () => await ListenLoopAsync(_cts.Token));
+                _listenerTask = ListenLoopAsync(_cts.Token);
             }
             catch (Exception ex)
             {
@@ -75,15 +74,13 @@ namespace NoDriver.Core.Runtime
                     try
                     {
                         await WebSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closing", token);
-                        if (_listenerTask != null)
-                            await _listenerTask.WhenWaitAsync(token);
+                        await _listenerTask.WhenWaitAsync(token);
                     }
                     catch { }
                 }
 
                 _cts?.Cancel();
-                if (_listenerTask != null)
-                    await _listenerTask;
+                await _listenerTask;
                 WebSocket.Dispose();
                 WebSocket = null;
                 _cts?.Dispose();
@@ -300,7 +297,7 @@ namespace NoDriver.Core.Runtime
                         ms.Position = 0;
                         ms.SetLength(0);
 
-                        _ = Task.Run(async () => await ProcessMessage(message, token));
+                        _ = ProcessMessage(message, token);
                     }
                 }
             }
@@ -320,6 +317,8 @@ namespace NoDriver.Core.Runtime
         {
             try
             {
+                await Task.Yield();
+
                 var node = JsonNode.Parse(message);
                 if (node == null)
                     throw new JsonException("Message is null or invalid.");

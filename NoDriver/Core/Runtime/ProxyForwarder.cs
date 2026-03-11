@@ -514,8 +514,12 @@ namespace NoDriver.Core.Runtime
 
         public async ValueTask DisposeAsync()
         {
-            _cts.Cancel();
-            await _listenerTask;
+            try
+            {
+                _cts.Cancel();
+                await _listenerTask;
+            }
+            catch { }
 
             Dispose(true);
             GC.SuppressFinalize(this);
