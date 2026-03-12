@@ -87,18 +87,15 @@ namespace NoDriver.Core.Runtime
                 var currentTab = _targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
                 if (currentTab != null)
                 {
-                    var currentTarget = currentTab.Target;
-
                     //if (logger.IsEnabled(LogLevel.Debug))
                     {
-                        var changes = Util.CompareTargetInfo(currentTarget, targetInfo);
-
-                        var changesString = new StringBuilder();
+                        var sb = new StringBuilder();
+                        var changes = Util.CompareTargetInfo(currentTab.Target, targetInfo);
                         foreach (var change in changes)
                         {
-                            changesString.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
+                            sb.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
                         }
-                        Console.WriteLine($"Target #{_targets.IndexOf(currentTab)} has changed: {changesString.ToString()}");
+                        Console.WriteLine($"Target #{_targets.IndexOf(currentTab)} has changed: {sb.ToString()}");
                     }
                     currentTab.Target = targetInfo;
                 }
@@ -121,8 +118,8 @@ namespace NoDriver.Core.Runtime
                 if (currentTab != null)
                 {
                     Console.WriteLine($"Target removed. id #{_targets.IndexOf(currentTab)} => {currentTab.ToString()}");
-                    _targets.Remove(currentTab);
-                    _ = currentTab.DisposeAsync();
+                    if (_targets.Remove(currentTab))
+                        _ = currentTab.DisposeAsync();
                 }
             }
             _ = UpdateTargetsAsync();
@@ -411,9 +408,10 @@ namespace NoDriver.Core.Runtime
                     {
                         if (Config?.Host != null && Config?.Port != null)
                         {
-                            _targets.Add(new Tab(
-                                $"ws://{Config.Host}:{Config.Port}/devtools/page/{target.TargetId}",
-                                target, this));
+                            _targets.AddIfNotExist(
+                                it => it.Target?.TargetId == target.TargetId,
+                                () => new Tab(
+                                    $"ws://{Config.Host}:{Config.Port}/devtools/page/{target.TargetId}", target, this));
                         }
                     }
                 }
@@ -425,16 +423,6 @@ namespace NoDriver.Core.Runtime
         {
             try
             {
-                foreach (var target in _targets)
-                {
-                    try
-                    {
-                        await target.DisposeAsync();
-                    }
-                    catch { }
-                }
-                _targets.Clear();
-
                 if (Connection != null)
                     await Connection.DisposeAsync();
             }
@@ -442,7 +430,26 @@ namespace NoDriver.Core.Runtime
 
             try
             {
-                foreach (var forwarder in _proxyForwarders)
+                var targets = _targets.ToList();
+                _targets.Clear();
+
+                foreach (var target in targets)
+                {
+                    try
+                    {
+                        await target.DisposeAsync();
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
+            try
+            {
+                var proxyForwarders = _proxyForwarders.ToList();
+                _proxyForwarders.Clear();
+
+                foreach (var forwarder in proxyForwarders)
                 {
                     try
                     {
@@ -450,7 +457,6 @@ namespace NoDriver.Core.Runtime
                     }
                     catch { }
                 }
-                _proxyForwarders.Clear();
             }
             catch { }
 
@@ -470,16 +476,6 @@ namespace NoDriver.Core.Runtime
             {
                 try
                 {
-                    foreach (var target in _targets)
-                    {
-                        try
-                        {
-                            target.Dispose();
-                        }
-                        catch { }
-                    }
-                    _targets.Clear();
-
                     if (Connection != null)
                         Connection.Dispose();
                 }
@@ -487,7 +483,26 @@ namespace NoDriver.Core.Runtime
 
                 try
                 {
-                    foreach (var forwarder in _proxyForwarders)
+                    var targets = _targets.ToList();
+                    _targets.Clear();
+
+                    foreach (var target in targets)
+                    {
+                        try
+                        {
+                            target.Dispose();
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var proxyForwarders = _proxyForwarders.ToList();
+                    _proxyForwarders.Clear();
+
+                    foreach (var forwarder in proxyForwarders)
                     {
                         try
                         {
@@ -495,7 +510,6 @@ namespace NoDriver.Core.Runtime
                         }
                         catch { }
                     }
-                    _proxyForwarders.Clear();
                 }
                 catch { }
 

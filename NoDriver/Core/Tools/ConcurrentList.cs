@@ -110,5 +110,16 @@ namespace NoDriver.Core.Tools
             lock (_lock) 
                 return _list.Where(predicate).ToList();
         }
+
+        public bool AddIfNotExist(Func<T, bool> predicate, Func<T> createFunc)
+        {
+            lock (_lock)
+            {
+                if (_list.Any(predicate))
+                    return false;
+                _list.Add(createFunc());
+                return true;
+            }
+        }
     }
 }
