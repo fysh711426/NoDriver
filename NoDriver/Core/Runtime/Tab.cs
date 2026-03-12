@@ -7,10 +7,11 @@ namespace NoDriver.Core.Runtime
 {
     public class Tab : Connection
     {
+        private readonly List<string> _downloadBehavior = new();
+
         private int? _windowId = null;
         private Cdp.DOM.Node? _dom = null;
-        private List<string> _downloadBehavior = new();
-
+        
         private bool _prepHeadlessDone = false;
         private bool _prepExpertDone = false;
         
@@ -214,22 +215,23 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false)
+        //ok
+        public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false, CancellationToken token = default)
         {
             if (Browser == null)
                 throw new InvalidOperationException("This tab has no browser attribute.");
 
-            if (newWindow && !newTab) 
+            if (newWindow && !newTab)
                 newTab = true;
 
             if (newTab)
             {
-                return await Browser.GetAsync(url, newTab, newWindow);
+                return await Browser.GetAsync(url, newTab, newWindow, token);
             }
             else
             {
-                var result = await SendAsync(Cdp.Page.Navigate(url));
-                await WaitAsync();
+                var result = await SendAsync(Cdp.Page.Navigate(url), token: token);
+                await WaitAsync(token: token);
                 return this;
             }
         }

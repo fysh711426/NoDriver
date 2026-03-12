@@ -230,7 +230,8 @@ namespace NoDriver.Core.Runtime
 
             var tx = new Transaction<ICommand>(id, methodName, command);
 
-            Mapper[id] = tx;
+            if (!Mapper.TryAdd(id, tx))
+                throw new InvalidOperationException($"Failed to create transaction. Duplicate message ID: {id}");
 
             try
             {
@@ -351,6 +352,7 @@ namespace NoDriver.Core.Runtime
                             {
                                 await task;
                             }
+                            catch (OperationCanceledException) { }
                             catch (Exception ex)
                             {
                                 Console.WriteLine($"Exception in callback for event {eventName} => {ex.Message}");

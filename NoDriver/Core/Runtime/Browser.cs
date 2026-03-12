@@ -1,4 +1,5 @@
-﻿using Silk.NET.Maths;
+﻿using NoDriver.Core.Tools;
+using Silk.NET.Maths;
 using Silk.NET.SDL;
 using System.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
@@ -9,14 +10,16 @@ namespace NoDriver.Core.Runtime
 {
     public class Browser : IDisposable, IAsyncDisposable
     {
+        private readonly ConcurrentList<Tab> _targets = new();
+        private readonly ConcurrentList<ProxyForwarder> _proxyForwarders = new();
+
         private Process? _process = null;
         private int? _processPid = null;
         private HTTPApi? _http = null;
         private CookieJar? _cookies = null;
-
+        
         public Config? Config { get; private set; } = null;
         public Connection? Connection { get; private set; } = null;
-        public List<Tab> Targets { get; private set; } = new();
         public JsonElement? Info { get; private set; } = null;
 
         public string WebSocketUrl
@@ -34,10 +37,13 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok
-        public Tab? MainTab => Targets.Where(it => it.Target?.Type == "page").FirstOrDefault();
+        public IReadOnlyList<Tab> Targets => _targets.ToList();
 
         //ok
-        public List<Tab> Tabs => Targets.Where(item => item.Target?.Type == "page").ToList();
+        public Tab? MainTab => _targets.FirstOrDefault(it => it.Target?.Type == "page");
+
+        //ok
+        public List<Tab> Tabs => _targets.Where(it => it.Target?.Type == "page");
 
         public CookieJar Cookies
         {
@@ -78,7 +84,7 @@ namespace NoDriver.Core.Runtime
             if (@event is Cdp.Target.TargetInfoChanged infoChanged)
             {
                 var targetInfo = infoChanged.TargetInfo;
-                var currentTab = Targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
+                var currentTab = _targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
                 if (currentTab != null)
                 {
                     var currentTarget = currentTab.Target;
@@ -92,7 +98,7 @@ namespace NoDriver.Core.Runtime
                         {
                             changesString.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
                         }
-                        Console.WriteLine($"Target #{Targets.IndexOf(currentTab)} has changed: {changesString.ToString()}");
+                        Console.WriteLine($"Target #{_targets.IndexOf(currentTab)} has changed: {changesString.ToString()}");
                     }
                     currentTab.Target = targetInfo;
                 }
@@ -105,17 +111,18 @@ namespace NoDriver.Core.Runtime
                     var newTarget = new Tab(
                         $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId}",
                         targetInfo, this);
-                    Targets.Add(newTarget);
-                    Console.WriteLine($"Target #{Targets.Count - 1} created => {newTarget.ToString()}");
+                    _targets.Add(newTarget);
+                    Console.WriteLine($"Target #{_targets.Count - 1} created => {newTarget.ToString()}");
                 }
             }
             else if (@event is Cdp.Target.TargetDestroyed destroyed)
             {
-                var currentTab = Targets.FirstOrDefault(it => it.Target?.TargetId == destroyed.TargetId);
+                var currentTab = _targets.FirstOrDefault(it => it.Target?.TargetId == destroyed.TargetId);
                 if (currentTab != null)
                 {
-                    Console.WriteLine($"Target removed. id #{Targets.IndexOf(currentTab)} => {currentTab.ToString()}");
-                    Targets.Remove(currentTab);
+                    Console.WriteLine($"Target removed. id #{_targets.IndexOf(currentTab)} => {currentTab.ToString()}");
+                    _targets.Remove(currentTab);
+                    _ = currentTab.DisposeAsync();
                 }
             }
             _ = UpdateTargetsAsync();
@@ -133,7 +140,7 @@ namespace NoDriver.Core.Runtime
                     Cdp.Target.CreateTarget(url, NewWindow: newWindow, EnableBeginFrameControl: true), token: token);
                 var targetId = result.TargetId;
 
-                var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == targetId);
+                var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == targetId);
                 if (connection == null)
                     throw new InvalidOperationException("Targets connection cannot be null.");
 
@@ -144,7 +151,7 @@ namespace NoDriver.Core.Runtime
             }
             else
             {
-                var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page");
+                var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page");
                 if (connection == null)
                     throw new InvalidOperationException("Targets connection cannot be null.");
 
@@ -175,6 +182,7 @@ namespace NoDriver.Core.Runtime
             if (!string.IsNullOrWhiteSpace(proxyServer))
             {
                 var forwarder = new ProxyForwarder(proxyServer, clientCertificates);
+                _proxyForwarders.Add(forwarder);
                 proxyServer = forwarder.ProxyServer;
             }
 
@@ -191,7 +199,7 @@ namespace NoDriver.Core.Runtime
 
             await WaitAsync(0.5, token);
 
-            var connection = Targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == result.TargetId);
+            var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == result.TargetId);
             if (connection == null)
                 throw new InvalidOperationException("Targets connection cannot be null.");
             return connection;
@@ -269,7 +277,7 @@ namespace NoDriver.Core.Runtime
             if (Info == null)
                 throw new Exception("Failed to connect to browser. If running as root in Linux, you may need Sandbox=false.");
 
-            Connection = new Tab(WebSocketUrl, browser: this);
+            Connection = new Connection(WebSocketUrl, browser: this);
 
             if (Config.AutodiscoverTargets)
             {
@@ -391,10 +399,9 @@ namespace NoDriver.Core.Runtime
             {
                 var result = await Connection.SendAsync(Cdp.Target.GetTargets(), token: token);
 
-                var targets = result.TargetInfos;
-                foreach (var target in targets)
+                foreach (var target in result.TargetInfos)
                 {
-                    var existingTab = Targets.FirstOrDefault(it => it.Target?.TargetId == target.TargetId);
+                    var existingTab = _targets.FirstOrDefault(it => it.Target?.TargetId == target.TargetId);
                     if (existingTab != null)
                     {
                         if (existingTab.Target != target)
@@ -404,7 +411,7 @@ namespace NoDriver.Core.Runtime
                     {
                         if (Config?.Host != null && Config?.Port != null)
                         {
-                            Targets.Add(new Tab(
+                            _targets.Add(new Tab(
                                 $"ws://{Config.Host}:{Config.Port}/devtools/page/{target.TargetId}",
                                 target, this));
                         }
@@ -418,8 +425,32 @@ namespace NoDriver.Core.Runtime
         {
             try
             {
+                foreach (var target in _targets)
+                {
+                    try
+                    {
+                        await target.DisposeAsync();
+                    }
+                    catch { }
+                }
+                _targets.Clear();
+
                 if (Connection != null)
                     await Connection.DisposeAsync();
+            }
+            catch { }
+
+            try
+            {
+                foreach (var forwarder in _proxyForwarders)
+                {
+                    try
+                    {
+                        await forwarder.DisposeAsync();
+                    }
+                    catch { }
+                }
+                _proxyForwarders.Clear();
             }
             catch { }
 
@@ -437,6 +468,37 @@ namespace NoDriver.Core.Runtime
         {
             if (disposing)
             {
+                try
+                {
+                    foreach (var target in _targets)
+                    {
+                        try
+                        {
+                            target.Dispose();
+                        }
+                        catch { }
+                    }
+                    _targets.Clear();
+
+                    if (Connection != null)
+                        Connection.Dispose();
+                }
+                catch { }
+
+                try
+                {
+                    foreach (var forwarder in _proxyForwarders)
+                    {
+                        try
+                        {
+                            forwarder.Dispose();
+                        }
+                        catch { }
+                    }
+                    _proxyForwarders.Clear();
+                }
+                catch { }
+
                 if (_process != null && !_process.HasExited)
                 {
                     try

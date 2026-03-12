@@ -21,12 +21,12 @@ namespace NoDriver.Core.Runtime
             "--disable-session-crashed-bubble",
             "--disable-search-engine-choice-screen"
         };
+        private readonly List<string> _browserArgs = new();
+        private readonly List<string> _extensions = new();
 
         private string _userDataDir = "";
         private bool _customDataDir = true;
-        private List<string> _browserArgs = new();
-        private List<string> _extensions = new();
-
+        
         public string UserDataDir
         {
             get => _userDataDir;
@@ -44,7 +44,7 @@ namespace NoDriver.Core.Runtime
         public bool Sandbox { get; set; } = true;
         public bool Expert { get; set; } = false;
         public bool AutodiscoverTargets { get; set; } = true;
-        public Dictionary<string, object> Attributes { get; set; } = new();
+        public Dictionary<string, object> Attributes { get; } = new();
 
         public Config()
         {

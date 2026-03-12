@@ -6,13 +6,14 @@ namespace NoDriver.Core.Runtime
 {
     public class Element
     {
+        private readonly ConcurrentDictionary<string, string> _attrs = new(StringComparer.OrdinalIgnoreCase);
+
         private Tab _tab;
         private Cdp.DOM.Node _node;
         private Cdp.DOM.Node? _tree;
         private Element? _parent = null;
         private Cdp.Runtime.RemoteObject? _remoteObject = null;
-        private ConcurrentDictionary<string, string> _attrs = new(StringComparer.OrdinalIgnoreCase);
-
+        
         private bool _isHighlighted = false;
 
         public string Tag => NodeName.ToLowerInvariant();
