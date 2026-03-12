@@ -79,49 +79,62 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok 要測試
-        private void HandleTargetUpdate(IEvent @event)
+        private void HandleTargetInfoChanged(Cdp.Target.TargetInfoChanged infoChanged)
         {
-            if (@event is Cdp.Target.TargetInfoChanged infoChanged)
+            var targetInfo = infoChanged.TargetInfo;
+            var target = _targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
+            if (target != null)
             {
-                var targetInfo = infoChanged.TargetInfo;
-                var currentTab = _targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
-                if (currentTab != null)
+                //if (logger.IsEnabled(LogLevel.Debug))
                 {
-                    //if (logger.IsEnabled(LogLevel.Debug))
+                    var sb = new StringBuilder();
+                    var changes = Util.CompareTargetInfo(target.Target, targetInfo);
+                    foreach (var change in changes)
                     {
-                        var sb = new StringBuilder();
-                        var changes = Util.CompareTargetInfo(currentTab.Target, targetInfo);
-                        foreach (var change in changes)
-                        {
-                            sb.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
-                        }
-                        Console.WriteLine($"Target #{_targets.IndexOf(currentTab)} has changed: {sb.ToString()}");
+                        sb.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
                     }
-                    currentTab.Target = targetInfo;
+                    Console.WriteLine($"Target #{_targets.IndexOf(target)} has changed: {sb.ToString()}");
                 }
+                target.Target = targetInfo;
             }
-            else if (@event is Cdp.Target.TargetCreated created)
+            _ = UpdateTargetsAsync();
+        }
+
+        //ok 要測試
+        private void HandleTargetCreated(Cdp.Target.TargetCreated created)
+        {
+            var targetInfo = created.TargetInfo;
+            if (Config?.Host != null && Config?.Port != null)
             {
-                var targetInfo = created.TargetInfo;
-                if (Config?.Host != null && Config?.Port != null)
-                {
-                    var newTarget = new Tab(
-                        $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId}",
-                        targetInfo, this);
-                    _targets.Add(newTarget);
-                    Console.WriteLine($"Target #{_targets.Count - 1} created => {newTarget.ToString()}");
-                }
+                var newTarget = new Tab(
+                    $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId}", targetInfo, this);
+                _targets.AddIfNotExist(
+                    it => it.Target?.TargetId == targetInfo.TargetId,
+                    () => newTarget);
+                Console.WriteLine($"Target #{_targets.Count - 1} created => {newTarget.ToString()}");
             }
-            else if (@event is Cdp.Target.TargetDestroyed destroyed)
+            _ = UpdateTargetsAsync();
+        }
+
+        //ok 要測試
+        private async Task HandleTargetDestroyed(Cdp.Target.TargetDestroyed destroyed)
+        {
+            var target = _targets.FirstOrDefault(it => it.Target?.TargetId == destroyed.TargetId);
+            if (target != null)
             {
-                var currentTab = _targets.FirstOrDefault(it => it.Target?.TargetId == destroyed.TargetId);
-                if (currentTab != null)
+                Console.WriteLine($"Target removed. id #{_targets.IndexOf(target)} => {target.ToString()}");
+                if (_targets.Remove(target))
                 {
-                    Console.WriteLine($"Target removed. id #{_targets.IndexOf(currentTab)} => {currentTab.ToString()}");
-                    if (_targets.Remove(currentTab))
-                        _ = currentTab.DisposeAsync();
+                    try { await target.DisposeAsync(); }
+                    catch { }
                 }
             }
+            _ = UpdateTargetsAsync();
+        }
+
+        //ok 要測試
+        private void HandleTargetCrashed(Cdp.Target.TargetCrashed crashed)
+        {
             _ = UpdateTargetsAsync();
         }
 
@@ -280,10 +293,10 @@ namespace NoDriver.Core.Runtime
             {
                 Console.WriteLine("Enabling autodiscover targets.");
 
-                Connection.AddHandler<Cdp.Target.TargetInfoChanged>((e, tab) => HandleTargetUpdate(e));
-                Connection.AddHandler<Cdp.Target.TargetCreated>((e, tab) => HandleTargetUpdate(e));
-                Connection.AddHandler<Cdp.Target.TargetDestroyed>((e, tab) => HandleTargetUpdate(e));
-                Connection.AddHandler<Cdp.Target.TargetCrashed>((e, tab) => HandleTargetUpdate(e));
+                Connection.AddHandler<Cdp.Target.TargetInfoChanged>((e, tab) => HandleTargetInfoChanged(e));
+                Connection.AddHandler<Cdp.Target.TargetCreated>((e, tab) => HandleTargetCreated(e));
+                Connection.AddHandler<Cdp.Target.TargetDestroyed>((e, tab) => HandleTargetDestroyed(e));
+                Connection.AddHandler<Cdp.Target.TargetCrashed>((e, tab) => HandleTargetCrashed(e));
 
                 await Connection.SendAsync(Cdp.Target.SetDiscoverTargets(true), token: token);
             }
@@ -396,22 +409,22 @@ namespace NoDriver.Core.Runtime
             {
                 var result = await Connection.SendAsync(Cdp.Target.GetTargets(), token: token);
 
-                foreach (var target in result.TargetInfos)
+                foreach (var targetInfo in result.TargetInfos)
                 {
-                    var existingTab = _targets.FirstOrDefault(it => it.Target?.TargetId == target.TargetId);
-                    if (existingTab != null)
+                    var target = _targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
+                    if (target != null)
                     {
-                        if (existingTab.Target != target)
-                            existingTab.Target = target;
+                        if (target.Target != targetInfo)
+                            target.Target = targetInfo;
                     }
                     else
                     {
                         if (Config?.Host != null && Config?.Port != null)
                         {
                             _targets.AddIfNotExist(
-                                it => it.Target?.TargetId == target.TargetId,
+                                it => it.Target?.TargetId == targetInfo.TargetId,
                                 () => new Tab(
-                                    $"ws://{Config.Host}:{Config.Port}/devtools/page/{target.TargetId}", target, this));
+                                    $"ws://{Config.Host}:{Config.Port}/devtools/page/{targetInfo.TargetId}", targetInfo, this));
                         }
                     }
                 }
@@ -435,10 +448,7 @@ namespace NoDriver.Core.Runtime
 
                 foreach (var target in targets)
                 {
-                    try
-                    {
-                        await target.DisposeAsync();
-                    }
+                    try { await target.DisposeAsync(); }
                     catch { }
                 }
             }
@@ -451,10 +461,7 @@ namespace NoDriver.Core.Runtime
 
                 foreach (var forwarder in proxyForwarders)
                 {
-                    try
-                    {
-                        await forwarder.DisposeAsync();
-                    }
+                    try { await forwarder.DisposeAsync(); }
                     catch { }
                 }
             }
@@ -488,10 +495,7 @@ namespace NoDriver.Core.Runtime
 
                     foreach (var target in targets)
                     {
-                        try
-                        {
-                            target.Dispose();
-                        }
+                        try { target.Dispose(); }
                         catch { }
                     }
                 }
@@ -504,10 +508,7 @@ namespace NoDriver.Core.Runtime
 
                     foreach (var forwarder in proxyForwarders)
                     {
-                        try
-                        {
-                            forwarder.Dispose();
-                        }
+                        try { forwarder.Dispose(); }
                         catch { }
                     }
                 }
