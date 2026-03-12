@@ -7,7 +7,7 @@ namespace NoDriver.Core.Runtime
 {
     public class Tab : Connection
     {
-        private readonly List<string> _downloadBehavior = new();
+        private List<string>? _downloadBehavior = null;
 
         private int? _windowId = null;
         private Cdp.DOM.Node? _dom = null;
@@ -774,7 +774,7 @@ namespace NoDriver.Core.Runtime
         //ok 要檢查下載是不是正確
         public async Task DownloadFileAsync(string url, string? filename = null, CancellationToken token = default)
         {
-            if (_downloadBehavior == null)
+            if (_downloadBehavior == null || _downloadBehavior.Count == 0)
             {
                 var dirPath = Path.Combine(Directory.GetCurrentDirectory(), "downloads");
                 Directory.CreateDirectory(dirPath);

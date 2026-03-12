@@ -540,14 +540,17 @@ namespace NoDriver.Core.Runtime
                                 {
                                     if (Directory.Exists(userDataDir))
                                         Directory.Delete(userDataDir, true);
-                                    Console.WriteLine($"Successfully removed temp profile {userDataDir}");
+                                    Console.WriteLine($"Successfully removed temp data dir {userDataDir}");
                                 }
                                 break;
                             }
-                            catch
+                            catch (Exception ex)
                             {
                                 if (i == 4)
-                                    Console.WriteLine($"Could not remove temp profile {userDataDir}");
+                                    Console.WriteLine(
+                                        $"Problem removing temp data dir {userDataDir}\n" +
+                                        $"Consider checking whether it's there and remove it by hand\n" +
+                                        $"Error: {ex.Message}");
                                 System.Threading.Thread.Sleep(150);
                             }
                         }

@@ -1,6 +1,6 @@
 ﻿namespace NoDriver.Core.Runtime
 {
-    public class BrowserContext : IAsyncDisposable
+    public class BrowserContext : IDisposable, IAsyncDisposable
     {
         private readonly Config _config;
         private readonly bool _keepOpen;
@@ -24,10 +24,27 @@
         {
             if (!_keepOpen)
             {
-                _instance.Stop();
-                await Task.CompletedTask; // 模擬 Util.deconstruct_browser
-                //if not self._keep_open:
-                //    await util.deconstruct_browser(self._instance)
+                if (_instance != null)
+                    await _instance.DisposeAsync();
+            }
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (!_keepOpen)
+                {
+                    _instance?.Dispose();
+                }
             }
         }
     }

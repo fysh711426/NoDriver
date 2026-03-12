@@ -23,6 +23,7 @@ namespace NoDriver.Core.Runtime
         };
         private readonly List<string> _browserArgs = new();
         private readonly List<string> _extensions = new();
+        private readonly List<string> _tempExtensionDirs = new();
 
         private string _userDataDir = "";
         private bool _customDataDir = true;
@@ -118,6 +119,7 @@ namespace NoDriver.Core.Runtime
                     Path.GetTempPath(), $"extension_{Guid.NewGuid().ToString("n").Substring(0, 8)}");
                 ZipFile.ExtractToDirectory(extensionPath, tempDir);
                 _extensions.Add(tempDir);
+                _tempExtensionDirs.Add(tempDir);
                 return;
             }
             if (Directory.Exists(extensionPath))
@@ -174,6 +176,36 @@ namespace NoDriver.Core.Runtime
                 args.Add($"--remote-debugging-port={Port}");
 
             return args;
+        }
+
+        public void Cleanup()
+        {
+            foreach (var tempDir in _tempExtensionDirs)
+            {
+                for (var i = 0; i < 5; i++)
+                {
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(tempDir))
+                        {
+                            if (Directory.Exists(tempDir))
+                                Directory.Delete(tempDir, true);
+                            Console.WriteLine($"Successfully removed temp extension dir {tempDir}");
+                        }
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        if (i == 4)
+                            Console.WriteLine(
+                                $"Problem removing temp extension dir {tempDir}\n" +
+                                $"Consider checking whether it's there and remove it by hand\n" +
+                                $"Error: {ex.Message}");
+                        Thread.Sleep(150);
+                    }
+                }
+            }
+            _tempExtensionDirs.Clear();
         }
     }
 }

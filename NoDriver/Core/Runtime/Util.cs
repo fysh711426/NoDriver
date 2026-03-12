@@ -27,64 +27,6 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public static async Task DeconstructBrowserAsync(Browser browser = null)
-        {
-            if (browser != null)
-            {
-                if (!browser.Stopped) browser.Stop();
-                var config = browser.Config;
-                if (!config.UsesCustomDataDir && !string.IsNullOrEmpty(config.UserDataDir))
-                {
-                    for (int i = 0; i < 3; i++)
-                    {
-                        try
-                        {
-                            Directory.Delete(config.UserDataDir, true);
-                            Console.WriteLine($"successfully removed temp profile {config.UserDataDir}");
-                            break;
-                        }
-                        catch
-                        {
-                            await Task.Delay(250);
-                        }
-                    }
-                }
-                return;
-            }
-
-            var instances = _registeredInstances.ToList();
-            foreach (var instance in instances)
-            {
-                if (!instance.Stopped) instance.Stop();
-                for (int attempt = 0; attempt < 5; attempt++)
-                {
-                    try
-                    {
-                        if (instance.Config != null && !instance.Config.UsesCustomDataDir)
-                        {
-                            Directory.Delete(instance.Config.UserDataDir, true);
-                            Console.WriteLine($"successfully removed temp profile {instance.Config.UserDataDir}");
-                        }
-                        break;
-                    }
-                    catch (DirectoryNotFoundException)
-                    {
-                        break;
-                    }
-                    catch (Exception e) when (e is UnauthorizedAccessException || e is IOException)
-                    {
-                        if (attempt == 4)
-                        {
-                            Console.WriteLine($"problem removing data dir {instance.Config?.UserDataDir}\nerror: {e}");
-                            break;
-                        }
-                        Thread.Sleep(150);
-                    }
-                }
-            }
-            _registeredInstances.Clear();
-        }
-
         //ok
         public static List<Cdp.DOM.Node> FilterRecurseAll(Cdp.DOM.Node doc, Func<Cdp.DOM.Node, bool> predicate)
         {
