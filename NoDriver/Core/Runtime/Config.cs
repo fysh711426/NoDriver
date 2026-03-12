@@ -26,16 +26,20 @@ namespace NoDriver.Core.Runtime
 
         private string _userDataDir = "";
         private bool _customDataDir = true;
-        
+
         public string UserDataDir
         {
             get => _userDataDir;
             set
             {
-                _userDataDir = value;
-                _customDataDir = true;
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    _userDataDir = value;
+                    _customDataDir = true;
+                }
             }
         }
+        public bool CustomDataDir => _customDataDir;
         public string Lang { get; set; } = "";
         public string BrowserExecutablePath { get; set; } = "";
         public string? Host { get; set; } = null;

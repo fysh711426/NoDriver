@@ -526,6 +526,33 @@ namespace NoDriver.Core.Runtime
                     _process = null;
                     _processPid = null;
                 }
+
+                if (Config != null)
+                {
+                    var userDataDir = Config.UserDataDir;
+                    if (!Config.CustomDataDir)
+                    {
+                        for (var i = 0; i < 5; i++)
+                        {
+                            try
+                            {
+                                if (!string.IsNullOrWhiteSpace(userDataDir))
+                                {
+                                    if (Directory.Exists(userDataDir))
+                                        Directory.Delete(userDataDir, true);
+                                    Console.WriteLine($"Successfully removed temp profile {userDataDir}");
+                                }
+                                break;
+                            }
+                            catch
+                            {
+                                if (i == 4)
+                                    Console.WriteLine($"Could not remove temp profile {userDataDir}");
+                                System.Threading.Thread.Sleep(150);
+                            }
+                        }
+                    }
+                }
             }
         }
 
