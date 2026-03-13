@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
 {
-    public class Tab : Connection
+    public class Tab : Connection, IEquatable<Tab>
     {
         private List<string>? _downloadBehavior = null;
 
@@ -52,7 +52,7 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok 要檢查 json 轉換有沒有成功
-        private async Task PrepareHeadlessAsync(CancellationToken token = default)
+        public async Task PrepareHeadlessAsync(CancellationToken token = default)
         {
             if (_prepHeadlessDone) 
                 return;
@@ -70,7 +70,7 @@ namespace NoDriver.Core.Runtime
         }
 
         // ok 要測試
-        private async Task PrepareExpertAsync(CancellationToken token = default)
+        public async Task PrepareExpertAsync(CancellationToken token = default)
         {
             if (_prepExpertDone) 
                 return;
@@ -390,12 +390,9 @@ namespace NoDriver.Core.Runtime
                 var node = Util.FilterRecurse(doc, n => n.NodeId == nid);
                 if (node == null)
                 {
-                    continue;
-                    // 這裡型別不對所以拿掉
-                    //var result = await SendAsync(Cdp.DOM.ResolveNode(NodeId: nid), token: token);
-                    //node = result.Object;
-                    //if (node == null)
-                    //    continue;
+                    node = await ResolveNodeAsync(nodeId: nid, token);
+                    if (node == null)
+                        continue;
                 }
 
                 var elem = new Element(node, this, doc);
@@ -424,8 +421,9 @@ namespace NoDriver.Core.Runtime
                     foreach (var textNode in iframeTextNodes)
                     {
                         var textElem = new Element(textNode, this, iframeElem.Tree);
-                        if (textElem.Parent != null)
-                            items.Add(textElem.Parent);
+                        var parent = textElem.Parent;
+                        if (parent != null)
+                            items.Add(parent);
                     }
                 }
             }
@@ -441,6 +439,20 @@ namespace NoDriver.Core.Runtime
             if (bestMatch)
                 return items.OrderBy(el => Math.Abs(text.Length - (el.TextAll?.Length ?? 0))).FirstOrDefault();
             return items.FirstOrDefault();
+        }
+
+        //ok
+        public async Task<Cdp.DOM.Node?> ResolveNodeAsync(Cdp.DOM.NodeId nodeId, CancellationToken token = default)
+        {
+            var result = await SendAsync(Cdp.DOM.ResolveNode(NodeId: nodeId), token: token);
+            var remoteObj = result.Object;
+            if (remoteObj.ObjectId != null)
+            {
+                var idResult = await SendAsync(Cdp.DOM.RequestNode(ObjectId: remoteObj.ObjectId), token: token);
+                var nodeResult = await SendAsync(Cdp.DOM.DescribeNode(NodeId: idResult.NodeId), token: token);
+                return nodeResult.Node;
+            }
+            return null;
         }
 
         //ok

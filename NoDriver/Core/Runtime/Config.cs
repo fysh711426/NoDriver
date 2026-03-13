@@ -178,7 +178,7 @@ namespace NoDriver.Core.Runtime
             return args;
         }
 
-        public void Cleanup()
+        public async Task ClearAsync(CancellationToken token = default)
         {
             foreach (var tempDir in _tempExtensionDirs)
             {
@@ -201,7 +201,7 @@ namespace NoDriver.Core.Runtime
                                 $"Problem removing temp extension dir {tempDir}\n" +
                                 $"Consider checking whether it's there and remove it by hand\n" +
                                 $"Error: {ex.Message}");
-                        Thread.Sleep(150);
+                        await Task.Delay(150, token);
                     }
                 }
             }

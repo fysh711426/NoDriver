@@ -159,6 +159,7 @@ namespace NoDriver.Core.Runtime
 
         private async Task RegisterHandlersAsync(CancellationToken token)
         {
+            // 可優化: 將 Domain 的啟用邏輯從 SendAsync 移到 AddHandler
             var activeDomains = new HashSet<string>();
 
             foreach (var (eventName, list) in Handlers)
@@ -242,17 +243,27 @@ namespace NoDriver.Core.Runtime
                     Params = command
                 };
 
-                var json = JsonSerializer.Serialize(request, JsonProtocolSerialization.Settings);
-                var bytes = Encoding.UTF8.GetBytes(json);
+                try
+                {
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonProtocolSerialization.Settings);
 
-                await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
+                    await WebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
 
-                await tx.Task.WhenWaitAsync(token);
+                    await tx.Task.WhenWaitAsync(token);
+                }
+                catch
+                {
+                    tx.Cancel(new ObjectDisposedException("Transaction canceled."));
+                    throw;
+                }
 
                 var responseRaw = await tx.Task;
+                if (responseRaw == null)
+                    throw new InvalidOperationException("Protocol response cannot be null.");
+
                 var response = responseRaw.Deserialize<TResponse>(JsonProtocolSerialization.Settings);
                 if (response == null)
-                    throw new ArgumentException("Failed to parse protocol response.");
+                    throw new InvalidOperationException("Failed to parse protocol response.");
                 return response;
             }
             finally
@@ -293,12 +304,13 @@ namespace NoDriver.Core.Runtime
                         }
                         while (!result.EndOfMessage);
 
+                        // 可優化: 直接將 ms 轉為 JsonNode
                         var message = Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
 
                         ms.Position = 0;
                         ms.SetLength(0);
 
-                        _ = ProcessMessage(message, token);
+                        _ = Task.Run(() => ProcessMessage(message, token));
                     }
                 }
             }
@@ -318,8 +330,6 @@ namespace NoDriver.Core.Runtime
         {
             try
             {
-                await Task.Yield();
-
                 var node = JsonNode.Parse(message);
                 if (node == null)
                     throw new JsonException("Message is null or invalid.");
@@ -342,7 +352,12 @@ namespace NoDriver.Core.Runtime
                     var eventName = @event.Method;
                     if (Handlers.TryGetValue(eventName, out var list))
                     {
-                        var tasks = list.ToList()
+                        var handlers = new List<IDomainEventHandlerWrapper>();
+                        lock(list)
+                        {
+                            handlers = list.ToList();
+                        }
+                        var tasks = handlers
                             .Select(it => it.HandleAsync(@event, (Tab)this))
                             .ToList();
 

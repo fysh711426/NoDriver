@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
 {
@@ -14,20 +15,22 @@ namespace NoDriver.Core.Runtime
             _apiBase = $"http://{host}:{port}";
         }
 
-        public async Task<JsonElement> GetAsync(string endpoint, CancellationToken token = default)
+        public async Task<JsonNode?> GetAsync(string endpoint, CancellationToken token = default)
             => await RequestAsync(endpoint, "GET", null, token);
 
-        public async Task<JsonElement> PostAsync(string endpoint, object? data = null, CancellationToken token = default)
+        public async Task<JsonNode?> PostAsync(string endpoint, object? data = null, CancellationToken token = default)
             => await RequestAsync(endpoint, "POST", data, token);
 
-        private async Task<JsonElement> RequestAsync(
+        private async Task<JsonNode?> RequestAsync(
             string endpoint, string method = "GET", object? data = null, CancellationToken token = default)
         {
+            endpoint = endpoint.TrimStart('/');
+
             var url = $"{_apiBase}/json";
             if (!string.IsNullOrWhiteSpace(endpoint))
                 url = $"{_apiBase}/json/{endpoint}";
 
-            method = method.ToUpper();
+            method = method.ToUpperInvariant();
             if (data != null && method == "GET")
                 throw new ArgumentException("GET requests cannot contain data.");
 
@@ -50,7 +53,7 @@ namespace NoDriver.Core.Runtime
                                 response.EnsureSuccessStatusCode();
                                 using (var stream = await response.Content.ReadAsStreamAsync(cts.Token))
                                 {
-                                    return JsonSerializer.Deserialize<JsonElement>(stream);
+                                    return await JsonSerializer.DeserializeAsync<JsonNode>(stream, cancellationToken: cts.Token);
                                 }
                             }
                         }

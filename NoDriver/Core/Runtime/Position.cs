@@ -7,8 +7,8 @@
         public double Right { get; }
         public double Bottom { get; }
 
-        public double AbsX { get; set; } = 0.0;
-        public double AbsY { get; set; } = 0.0;
+        public double AbsX { get; init; } = 0.0;
+        public double AbsY { get; init; } = 0.0;
 
         public double X => Left;
         public double Y => Top;

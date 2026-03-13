@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
 {
@@ -20,18 +21,15 @@ namespace NoDriver.Core.Runtime
         
         public Config? Config { get; private set; } = null;
         public Connection? Connection { get; private set; } = null;
-        public JsonElement? Info { get; private set; } = null;
+        public JsonNode? Info { get; private set; } = null;
 
         public string WebSocketUrl
         {
             get
             {
-                if (Info?.TryGetProperty("webSocketDebuggerUrl", out var prop) == true)
-                {
-                    var value = prop.GetString();
-                    if (value != null)
-                        return value;
-                }
+                var url = Info?["webSocketDebuggerUrl"]?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(url))
+                    return url;
                 return "";
             }
         }
@@ -244,10 +242,12 @@ namespace NoDriver.Core.Runtime
                     throw new FileNotFoundException("Could not determine browser executable.");
             }
 
-            var args = Config.GetArgs()
-                .Select(it => it.Trim())
-                .Aggregate("", (r, it) => r + " " +
-                    (it.Contains(" ") ? $"\"{it}\"" : it));
+            var args = Config.GetArgs();
+            //var args = Config.GetArgs()
+            //    .Select(it => it.Trim())
+            //    .Aggregate("", (r, it) => r + " " +
+            //        (it.Contains(" ") ? $"\"{it}\"" : it));
+
             Console.WriteLine($"starting\n\texecutable: {exePath}\n\narguments: \n{string.Join("\n\t", args)}");
 
             if (!connectExisting)
@@ -272,8 +272,7 @@ namespace NoDriver.Core.Runtime
             {
                 try
                 {
-                    var data = await _http.GetAsync("version", token);
-                    Info = data;
+                    Info = await _http.GetAsync("version", token);
                     break;
                 }
                 catch

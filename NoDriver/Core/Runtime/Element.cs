@@ -1,10 +1,11 @@
 ﻿using NoDriver.Core.Messaging;
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
 {
-    public class Element
+    public class Element : IEquatable<Element>
     {
         private readonly ConcurrentDictionary<string, string> _attrs = new(StringComparer.OrdinalIgnoreCase);
 
@@ -92,42 +93,25 @@ namespace NoDriver.Core.Runtime
             }
         }
         //ok 要測試
-        public List<Element> Children
+        public IEnumerable<Element> Children
         {
             get
             {
-                var children = new List<Element>();
                 if (_node.NodeName == "IFRAME")
                 {
                     var frame = _node.ContentDocument;
-                    if (frame?.ChildNodeCount == null || frame.ChildNodeCount == 0)
-                        return children;
-
-                    if (frame.Children != null)
-                    {
-                        foreach (var child in frame.Children)
-                        {
-                            var childElem = new Element(child, _tab, frame);
-                            if (childElem != null)
-                                children.Add(childElem);
-                        }
-                    }
-                    return children;
+                    if (frame?.ChildNodeCount > 0)
+                        if (frame.Children != null)
+                            foreach (var child in frame.Children)
+                                yield return new Element(child, _tab, frame);
                 }
-
-                if (_node.ChildNodeCount == null || _node.ChildNodeCount == 0)
-                    return children;
-
-                if (_node.Children != null)
+                else
                 {
-                    foreach (var child in _node.Children)
-                    {
-                        var childElem = new Element(child, _tab, _tree);
-                        if (childElem != null)
-                            children.Add(childElem);
-                    }
+                    if (_node.ChildNodeCount > 0)
+                        if (_node.Children != null)
+                            foreach (var child in _node.Children)
+                                yield return new Element(child, _tab, _tree);
                 }
-                return children;
             }
         }
         public Cdp.Runtime.RemoteObject? RemoteObject => _remoteObject;
@@ -308,8 +292,12 @@ namespace NoDriver.Core.Runtime
 
                     var scrollY = await getValue("window.scrollY");
                     var scrollX = await getValue("window.scrollX");
-                    pos.AbsX = pos.Left + scrollX + pos.Width / 2.0;
-                    pos.AbsY = pos.Top + scrollY + pos.Height / 2.0;
+
+                    return pos with
+                    {
+                        AbsX = pos.Left + scrollX + pos.Width / 2.0,
+                        AbsY = pos.Top + scrollY + pos.Height / 2.0
+                    };
                 }
                 return pos;
             }
@@ -456,7 +444,7 @@ namespace NoDriver.Core.Runtime
             {
                 if (ChildNodeCount == 1)
                 {
-                    var childNode = Children[0];
+                    var childNode = Children.First();
                     await childNode.SetTextAsync(value, token);
                     await UpdateAsync(token: token);
                     return;
@@ -734,21 +722,13 @@ namespace NoDriver.Core.Runtime
         //ok
         private void MakeAttrs()
         {
-            var sav = null as string;
             if (_node.Attributes != null)
             {
-                for (var i = 0; i < _node.Attributes.Count; i++)
+                for (var i = 0; i < _node.Attributes.Count - 1; i += 2)
                 {
-                    var a = _node.Attributes[i];
-                    if (i == 0 || i % 2 == 0)
-                    {
-                        sav = a;
-                    }
-                    else
-                    {
-                        if (sav != null)
-                            _attrs[sav] = a;
-                    }
+                    var key = _node.Attributes[i];
+                    var value = _node.Attributes[i + 1];
+                    _attrs[key] = value;
                 }
             }
         }
@@ -779,22 +759,16 @@ namespace NoDriver.Core.Runtime
         {
             var tagName = NodeName.ToLowerInvariant();
 
-            var content = "";
+            var content = new StringBuilder();
             if (ChildNodeCount > 0)
             {
-                if (Children != null)
-                {
-                    foreach (var child in Children)
-                    {
-                        content += child.ToString();
-                    }
-                }
+                foreach (var child in Children)
+                    content.Append(child.ToString());
             }
-
             if (NodeType == 3)
             {
-                content += NodeValue;
-                return content;
+                content.Append(NodeValue);
+                return content.ToString();
             }
 
             var attrStrings = _attrs.Select(kvp => $@"{kvp.Key}=""{kvp.Value}""");

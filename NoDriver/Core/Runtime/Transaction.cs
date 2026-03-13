@@ -1,4 +1,5 @@
 ﻿using NoDriver.Core.Messaging;
+using NoDriver.Core.Tools;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -6,13 +7,13 @@ namespace NoDriver.Core.Runtime
 {
     public class Transaction<TRawParams>
     {
-        protected readonly TaskCompletionSource<JsonObject> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        protected readonly TaskCompletionSource<JsonObject?> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int Id { get; }
         public string Method { get; }
         public TRawParams Params { get; }
 
-        public Task<JsonObject> Task => _tcs.Task;
+        public Task<JsonObject?> Task => _tcs.Task;
 
         public Transaction(int id, string method, TRawParams @params)
         {
@@ -21,20 +22,16 @@ namespace NoDriver.Core.Runtime
             Params = @params;
         }
 
-        public string Message => JsonSerializer.Serialize(new
-        {
-            Method,
-            Params,
-            Id
-        });
+        public string Message => JsonSerializer.Serialize(
+            new { Method, Params, Id }, JsonProtocolSerialization.Settings);
 
-        public bool HasException => _tcs.Task.IsFaulted;
+        public bool HasException => _tcs.Task.IsFaulted || _tcs.Task.IsCanceled;
 
         public virtual void ProcessResponse(ProtocolResponse response)
         {
             if (response.Error != null)
                 _tcs.TrySetException(new ProtocolErrorException(response.Error));
-            else if (response.Result != null)
+            else
                 _tcs.TrySetResult(response.Result);
         }
 
@@ -46,7 +43,7 @@ namespace NoDriver.Core.Runtime
         public override string ToString()
         {
             var isDone = _tcs.Task.IsCompleted;
-            var success = isDone && HasException ? false : true;
+            var success = isDone && !HasException;
 
             var status = "";
             if (isDone)

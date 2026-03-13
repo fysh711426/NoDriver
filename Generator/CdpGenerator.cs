@@ -395,7 +395,7 @@ namespace Generator
             text = Regex.Replace(text, @"([A-Z]+)([A-Z][a-z])", "$1_$2");
             text = Regex.Replace(text, @"([a-z\d])([A-Z])", "$1_$2");
             text = text.Replace("-", "_");
-            return text.ToLower();
+            return text.ToLowerInvariant();
         }
 
         protected static string EscapeKeyword(string name)
