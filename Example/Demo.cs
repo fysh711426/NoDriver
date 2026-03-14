@@ -75,7 +75,7 @@ namespace Example
 
                         await tab.ActivateAsync();
                         await tab.SetWindowSizeAsync(
-                            randomBox.left, randomBox.top, randomBox.width, randomBox.height);
+                            randomBox.Left, randomBox.Top, randomBox.Width, randomBox.Height);
                     }
                 }
 

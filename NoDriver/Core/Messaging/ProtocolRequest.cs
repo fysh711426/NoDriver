@@ -1,10 +1,10 @@
 ﻿namespace NoDriver.Core.Messaging
 {
-    public class ProtocolRequest<TRawParams>
+    public class ProtocolRequest
     {
         public int Id { get; set; } = 0;
         public string Method { get; set; } = "";
-        public TRawParams Params { get; set; } = default!;
+        public object Params { get; set; } = new();
         public string? SessionId { get; set; } = null;
     }
 }

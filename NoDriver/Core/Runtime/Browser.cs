@@ -103,7 +103,7 @@ namespace NoDriver.Core.Runtime
             if (Config?.Host != null && Config?.Port != null)
             {
                 var newTarget = new Tab(
-                    $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId}", targetInfo, this);
+                    $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId.Value}", targetInfo, this);
                 _targets.AddIfNotExist(
                     it => it.Target?.TargetId == targetInfo.TargetId,
                     () => newTarget);
@@ -146,13 +146,13 @@ namespace NoDriver.Core.Runtime
                     Cdp.Target.CreateTarget(url, NewWindow: newWindow, EnableBeginFrameControl: true), token: token);
                 var targetId = result.TargetId;
 
+                await UpdateTargetsAsync(token);
+
                 var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == targetId);
                 if (connection == null)
                     throw new InvalidOperationException("Targets connection cannot be null.");
 
                 connection.Browser = this;
-                await UpdateTargetsAsync(token);
-                await WaitAsync(0, token);
                 return connection;
             }
             else
@@ -165,7 +165,6 @@ namespace NoDriver.Core.Runtime
                 //connection.FrameId = result.FrameId;
                 connection.Browser = this;
                 await UpdateTargetsAsync(token);
-                await WaitAsync(0, token);
                 return connection;
             }
         }
@@ -246,7 +245,7 @@ namespace NoDriver.Core.Runtime
             //    .Aggregate("", (r, it) => r + " " +
             //        (it.Contains(" ") ? $"\"{it}\"" : it));
 
-            Console.WriteLine($"starting\n\texecutable: {exePath}\n\narguments: \n{string.Join("\n\t", args)}");
+            Console.WriteLine($"starting\n\texecutable: {exePath}\n\narguments: \n\t{string.Join("\n\t", args)}");
 
             if (!connectExisting)
             {
@@ -426,7 +425,7 @@ namespace NoDriver.Core.Runtime
                             _targets.AddIfNotExist(
                                 it => it.Target?.TargetId == targetInfo.TargetId,
                                 () => new Tab(
-                                    $"ws://{Config.Host}:{Config.Port}/devtools/page/{targetInfo.TargetId}", targetInfo, this));
+                                    $"ws://{Config.Host}:{Config.Port}/devtools/page/{targetInfo.TargetId.Value}", targetInfo, this));
                         }
                     }
                 }

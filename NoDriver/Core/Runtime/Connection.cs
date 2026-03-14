@@ -236,7 +236,7 @@ namespace NoDriver.Core.Runtime
 
             try
             {
-                var request = new ProtocolRequest<ICommand>
+                var request = new ProtocolRequest
                 {
                     Id = id,
                     Method = methodName,
