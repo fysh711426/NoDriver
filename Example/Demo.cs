@@ -1,6 +1,5 @@
 ﻿using NoDriver.Core.Runtime;
-using Silk.NET.Maths;
-using Silk.NET.SDL;
+using NoDriver.Core.Tools;
 using System.Diagnostics;
 
 namespace Example
@@ -33,15 +32,9 @@ namespace Example
 
         private static async Task Run()
         {
-            var sdl = Sdl.GetApi();
-            if (sdl.Init(Sdl.InitVideo) < 0)
-                throw new Exception("SDL init failed.");
+            var resolution = ScreenHelper.GetResolution();
 
-            Rectangle<int> rect = default;
-            if (sdl.GetDisplayBounds(0, ref rect) < 0)
-                throw new Exception("No monitors detected.");
-
-            var SCREEN_WIDTH = rect.Size.X;
+            var SCREEN_WIDTH = resolution.Width;
             var NUM_WINS = SCREEN_WIDTH / 325;
 
             await using (var browser = await Browser.CreateAsync())

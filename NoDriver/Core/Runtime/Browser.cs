@@ -1,6 +1,4 @@
 ﻿using NoDriver.Core.Tools;
-using Silk.NET.Maths;
-using Silk.NET.SDL;
 using System.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -18,7 +16,7 @@ namespace NoDriver.Core.Runtime
         private int? _processPid = null;
         private HTTPApi? _http = null;
         private CookieJar? _cookies = null;
-        
+
         public Config? Config { get; private set; } = null;
         public Connection? Connection { get; private set; } = null;
         public JsonNode? Info { get; private set; } = null;
@@ -56,7 +54,7 @@ namespace NoDriver.Core.Runtime
         //ok
         public bool Stopped => _process == null || _process.HasExited;
 
-        private Browser() 
+        private Browser()
         {
         }
 
@@ -77,7 +75,7 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok 要測試
-        private void HandleTargetInfoChanged(Cdp.Target.TargetInfoChanged infoChanged)
+        private async Task HandleTargetInfoChanged(Cdp.Target.TargetInfoChanged infoChanged)
         {
             var targetInfo = infoChanged.TargetInfo;
             var target = _targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
@@ -95,11 +93,11 @@ namespace NoDriver.Core.Runtime
                 }
                 target.Target = targetInfo;
             }
-            _ = UpdateTargetsAsync();
+            await UpdateTargetsAsync();
         }
 
         //ok 要測試
-        private void HandleTargetCreated(Cdp.Target.TargetCreated created)
+        private async Task HandleTargetCreated(Cdp.Target.TargetCreated created)
         {
             var targetInfo = created.TargetInfo;
             if (Config?.Host != null && Config?.Port != null)
@@ -111,7 +109,7 @@ namespace NoDriver.Core.Runtime
                     () => newTarget);
                 Console.WriteLine($"Target #{_targets.Count - 1} created => {newTarget.ToString()}");
             }
-            _ = UpdateTargetsAsync();
+            await UpdateTargetsAsync();
         }
 
         //ok 要測試
@@ -127,13 +125,13 @@ namespace NoDriver.Core.Runtime
                     catch { }
                 }
             }
-            _ = UpdateTargetsAsync();
+            await UpdateTargetsAsync();
         }
 
         //ok 要測試
-        private void HandleTargetCrashed(Cdp.Target.TargetCrashed crashed)
+        private async Task HandleTargetCrashed(Cdp.Target.TargetCrashed crashed)
         {
-            _ = UpdateTargetsAsync();
+            await UpdateTargetsAsync();
         }
 
         //ok
@@ -181,7 +179,7 @@ namespace NoDriver.Core.Runtime
             string? proxyServer = null,
             List<string>? proxyBypassList = null,
             List<string>? originsWithUniversalNetworkAccess = null,
-            X509Certificate2Collection? clientCertificates = null, 
+            X509Certificate2Collection? clientCertificates = null,
             CancellationToken token = default)
         {
             if (Connection == null)
@@ -314,24 +312,11 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok
-        public async Task<List<(int left, int top, int width, int height)>?> TileWindowsAsync(List<Tab>? windows = null, int maxColumns = 0, CancellationToken token = default)
+        public async Task<List<(int Left, int Top, int Width, int Height)>?> TileWindowsAsync(List<Tab>? windows = null, int maxColumns = 0, CancellationToken token = default)
         {
-            var sdl = Sdl.GetApi();
-            if (sdl.Init(Sdl.InitVideo) < 0)
-            {
-                Console.WriteLine("SDL init failed.");
-                return null;
-            }
-
-            Rectangle<int> rect = default;
-            if (sdl.GetDisplayBounds(0, ref rect) < 0)
-            {
-                Console.WriteLine("No monitors detected.");
-                return null;
-            }
-
-            var screenWidth = rect.Size.X;
-            var screenHeight = rect.Size.Y;
+            var resolution = ScreenHelper.GetResolution();
+            var screenWidth = resolution.Width;
+            var screenHeight = resolution.Height;
 
             var distinctWindows = new Dictionary<int, List<Tab>>();
 
@@ -399,6 +384,24 @@ namespace NoDriver.Core.Runtime
                 }
                 return grid;
             }
+        }
+        
+        //ok 要測試
+        public async Task<(int Width, int Height)?> GetScreenResolutionAsync(CancellationToken token = default)
+        {
+            if (Connection != null)
+            {
+                var expression = "({ width: window.screen.availWidth, height: window.screen.availHeight })";
+                var result = await Connection.SendAsync(Cdp.Runtime.Evaluate(expression, ReturnByValue: true));
+                var data = result.Result.Value;
+
+                var width = data?["width"]?.GetValue<int?>();
+                var height = data?["height"]?.GetValue<int?>();
+
+                if (width != null && height != null)
+                    return (width.Value, height.Value);
+            }
+            return null;
         }
 
         //ok
@@ -526,35 +529,35 @@ namespace NoDriver.Core.Runtime
                     _processPid = null;
                 }
 
-                if (Config != null)
-                {
-                    var userDataDir = Config.UserDataDir;
-                    if (!Config.CustomDataDir)
-                    {
-                        for (var i = 0; i < 5; i++)
-                        {
-                            try
-                            {
-                                if (!string.IsNullOrWhiteSpace(userDataDir))
-                                {
-                                    if (Directory.Exists(userDataDir))
-                                        Directory.Delete(userDataDir, true);
-                                    Console.WriteLine($"Successfully removed temp data dir {userDataDir}");
-                                }
-                                break;
-                            }
-                            catch (Exception ex)
-                            {
-                                if (i == 4)
-                                    Console.WriteLine(
-                                        $"Problem removing temp data dir {userDataDir}\n" +
-                                        $"Consider checking whether it's there and remove it by hand\n" +
-                                        $"Error: {ex.Message}");
-                                System.Threading.Thread.Sleep(150);
-                            }
-                        }
-                    }
-                }
+                //if (Config != null)
+                //{
+                //    var userDataDir = Config.UserDataDir;
+                //    if (!Config.CustomDataDir)
+                //    {
+                //        for (var i = 0; i < 5; i++)
+                //        {
+                //            try
+                //            {
+                //                if (!string.IsNullOrWhiteSpace(userDataDir))
+                //                {
+                //                    if (Directory.Exists(userDataDir))
+                //                        Directory.Delete(userDataDir, true);
+                //                    Console.WriteLine($"Successfully removed temp data dir {userDataDir}");
+                //                }
+                //                break;
+                //            }
+                //            catch (Exception ex)
+                //            {
+                //                if (i == 4)
+                //                    Console.WriteLine(
+                //                        $"Problem removing temp data dir {userDataDir}\n" +
+                //                        $"Consider checking whether it's there and remove it by hand\n" +
+                //                        $"Error: {ex.Message}");
+                //                System.Threading.Thread.Sleep(150);
+                //            }
+                //        }
+                //    }
+                //}
             }
         }
 
