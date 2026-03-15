@@ -14,11 +14,11 @@ namespace Example
                 if (browser.MainTab == null)
                     throw new InvalidOperationException("MainTab is null.");
 
-                async Task responseReceivedHandler(Cdp.Network.ResponseReceived e, Tab tab)
+                async Task responseReceivedHandler(Cdp.Network.ResponseReceived e, Connection conn)
                 {
                     try
                     {
-                        var result = await tab.SendAsync(Cdp.Network.GetResponseBody(e.RequestId));
+                        var result = await conn.SendAsync(Cdp.Network.GetResponseBody(e.RequestId));
                         if (string.IsNullOrWhiteSpace(result.Body))
                             return;
 

@@ -375,9 +375,9 @@ namespace NoDriver.Core.Runtime
             {
                 await Tab.SendAsync(Cdp.DOM.ScrollIntoViewIfNeeded(BackendNodeId: BackendNodeId), token: token);
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                Console.WriteLine($"Could not scroll into view: {e.Message}");
+                Console.WriteLine($"Could not scroll into view: {ex.Message}");
             }
         }
 
@@ -562,7 +562,7 @@ namespace NoDriver.Core.Runtime
             }
             catch
             {
-                Console.WriteLine("FlashAsync() : could not determine position.");
+                Console.WriteLine("FlashAsync(): could not determine position.");
                 return;
             }
 

@@ -5,28 +5,28 @@ using System.Text.Json;
 
 namespace NoDriver.Core
 {
-    public delegate void SyncDomainEventHandler<in TEvent>(TEvent @event, Tab sender) where TEvent : IEvent;
+    public delegate void SyncEventHandler<in TEvent>(TEvent @event, Connection sender) where TEvent : IEvent;
 
-    public delegate Task AsyncDomainEventHandler<in TEvent>(TEvent @event, Tab sender) where TEvent : IEvent;
+    public delegate Task AsyncEventHandler<in TEvent>(TEvent @event, Connection sender) where TEvent : IEvent;
 
-    public interface IDomainEventHandlerWrapper
+    public interface IEventHandlerWrapper
     {
         Delegate RawHandler { get; }
-        Task HandleAsync(ProtocolEvent rawEvent, Tab sender);
+        Task HandleAsync(ProtocolEvent rawEvent, Connection sender);
     }
 
-    public class DomainEventHandlerWrapper<TEvent> : IDomainEventHandlerWrapper where TEvent : IEvent
+    public class EventHandlerWrapper<TEvent> : IEventHandlerWrapper where TEvent : IEvent
     {
         public Delegate RawHandler { get; }
 
-        private readonly AsyncDomainEventHandler<TEvent> _handler;
+        private readonly AsyncEventHandler<TEvent> _handler;
 
-        public DomainEventHandlerWrapper(AsyncDomainEventHandler<TEvent> handler)
+        public EventHandlerWrapper(AsyncEventHandler<TEvent> handler)
         {
             RawHandler = handler;
             _handler = handler;
         }
-        public DomainEventHandlerWrapper(SyncDomainEventHandler<TEvent> handler)
+        public EventHandlerWrapper(SyncEventHandler<TEvent> handler)
         {
             RawHandler = handler;
             _handler = (e, sender) =>
@@ -35,7 +35,7 @@ namespace NoDriver.Core
                 return Task.CompletedTask;
             };
         }
-        public Task HandleAsync(ProtocolEvent rawEvent, Tab sender)
+        public Task HandleAsync(ProtocolEvent rawEvent, Connection sender)
         {
             var @event = rawEvent.Params.Deserialize<TEvent>(JsonProtocolSerialization.Settings);
             if (@event == null)

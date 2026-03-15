@@ -24,7 +24,7 @@ namespace NoDriver.Core.Runtime
         public Cdp.Target.TargetInfo? Target { get; set; } = null;
         
         public ConcurrentDictionary<int, Transaction<ICommand>> Mapper { get; } = new();
-        public ConcurrentDictionary<string, List<IDomainEventHandlerWrapper>> Handlers { get; } = new();
+        public ConcurrentDictionary<string, List<IEventHandlerWrapper>> Handlers { get; } = new();
         public ConcurrentDictionary<string, byte> EnabledDomains { get; } = new();
 
         public bool Closed => 
@@ -98,23 +98,23 @@ namespace NoDriver.Core.Runtime
                 throw new Exception($"{nameof(MethodNameAttribute)} is required on type {type.Name} but it is not presented.");
 
         //ok
-        public void AddHandler<TEvent>(AsyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
+        public void AddHandler<TEvent>(AsyncEventHandler<TEvent> handler) where TEvent : IEvent
         {
             if (handler == null) 
                 throw new Exception("The event handler cannot be null.");
-            AddHandlerInternal(new DomainEventHandlerWrapper<TEvent>(handler));
+            AddHandlerInternal(new EventHandlerWrapper<TEvent>(handler));
         }
 
         //ok
-        public void AddHandler<TEvent>(SyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
+        public void AddHandler<TEvent>(SyncEventHandler<TEvent> handler) where TEvent : IEvent
         {
             if (handler == null)
                 throw new Exception("The event handler cannot be null.");
-            AddHandlerInternal(new DomainEventHandlerWrapper<TEvent>(handler));
+            AddHandlerInternal(new EventHandlerWrapper<TEvent>(handler));
         }
 
         //ok
-        private void AddHandlerInternal<TEvent>(DomainEventHandlerWrapper<TEvent> wrapper) where TEvent : IEvent
+        private void AddHandlerInternal<TEvent>(EventHandlerWrapper<TEvent> wrapper) where TEvent : IEvent
         {
             var eventName = GetMethodName(typeof(TEvent));
             var list = Handlers.GetOrAdd(eventName, _ => new());
@@ -125,13 +125,13 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok
-        public void RemoveHandler<TEvent>(AsyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
+        public void RemoveHandler<TEvent>(AsyncEventHandler<TEvent> handler) where TEvent : IEvent
         {
             RemoveHandlerInternal<TEvent>(handler);
         }
 
         //ok
-        public void RemoveHandler<TEvent>(SyncDomainEventHandler<TEvent> handler) where TEvent : IEvent
+        public void RemoveHandler<TEvent>(SyncEventHandler<TEvent> handler) where TEvent : IEvent
         {
             RemoveHandlerInternal<TEvent>(handler);
         }
@@ -330,47 +330,47 @@ namespace NoDriver.Core.Runtime
         {
             try
             {
-                var node = JsonNode.Parse(message);
-                if (node == null)
-                    throw new JsonException("Message is null or invalid.");
-
-                if (node["id"] != null)
+                using (var doc = JsonDocument.Parse(message, JsonProtocolSerialization.DocSettings))
                 {
-                    var response = node.Deserialize<ProtocolResponse>(JsonProtocolSerialization.Settings);
-                    if (response == null)
-                        throw new JsonException("ProtocolResponse is null or invalid.");
-
-                    if (Mapper.TryRemove(response.Id, out var tx))
-                        tx.ProcessResponse(response);
-                }
-                else
-                {
-                    var @event = node.Deserialize<ProtocolEvent>(JsonProtocolSerialization.Settings);
-                    if (@event == null)
-                        throw new JsonException("ProtocolEvent is null or invalid.");
-
-                    var eventName = @event.Method;
-                    if (Handlers.TryGetValue(eventName, out var list))
+                    var node = doc.RootElement;
+                    if (node.TryGetProperty("id", out _))
                     {
-                        var handlers = new List<IDomainEventHandlerWrapper>();
-                        lock(list)
-                        {
-                            handlers = list.ToList();
-                        }
-                        var tasks = handlers
-                            .Select(it => it.HandleAsync(@event, (Tab)this))
-                            .ToList();
+                        var response = node.Deserialize<ProtocolResponse>(JsonProtocolSerialization.Settings);
+                        if (response == null)
+                            throw new JsonException("ProtocolResponse is null or invalid.");
 
-                        foreach (var task in tasks)
+                        if (Mapper.TryRemove(response.Id, out var tx))
+                            tx.ProcessResponse(response);
+                    }
+                    else
+                    {
+                        var @event = node.Deserialize<ProtocolEvent>(JsonProtocolSerialization.Settings);
+                        if (@event == null)
+                            throw new JsonException("ProtocolEvent is null or invalid.");
+
+                        var eventName = @event.Method;
+                        if (Handlers.TryGetValue(eventName, out var list))
                         {
-                            try
+                            var handlers = new List<IEventHandlerWrapper>();
+                            lock (list)
                             {
-                                await task;
+                                handlers = list.ToList();
                             }
-                            catch (OperationCanceledException) { }
-                            catch (Exception ex)
+                            var tasks = handlers
+                                .Select(it => it.HandleAsync(@event, this))
+                                .ToList();
+
+                            foreach (var task in tasks)
                             {
-                                Console.WriteLine($"Exception in callback for event {eventName} => {ex.Message}");
+                                try
+                                {
+                                    await task;
+                                }
+                                catch (OperationCanceledException) { }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Exception in callback for event {eventName} => {ex.Message}");
+                                }
                             }
                         }
                     }

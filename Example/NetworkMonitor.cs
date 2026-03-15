@@ -12,12 +12,12 @@ namespace Example
                 if (browser.MainTab == null)
                     throw new InvalidOperationException("MainTab is null.");
 
-                void receiveHandler(Cdp.Network.ResponseReceived e, Tab _)
+                void receiveHandler(Cdp.Network.ResponseReceived e, Connection _)
                 {
                     Console.WriteLine(e.Response);
                 }
 
-                void sendHandler(Cdp.Network.RequestWillBeSent e, Tab _)
+                void sendHandler(Cdp.Network.RequestWillBeSent e, Connection _)
                 {
                     var r = e.Request;
                     var s = $"{r.Method} {r.Url}";
@@ -32,7 +32,6 @@ namespace Example
                     }
                     Console.WriteLine(s);
                 }
-                ;
 
                 browser.MainTab.AddHandler<Cdp.Network.RequestWillBeSent>(sendHandler);
                 browser.MainTab.AddHandler<Cdp.Network.ResponseReceived>(receiveHandler);
