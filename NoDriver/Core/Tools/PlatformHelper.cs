@@ -2,7 +2,7 @@
 
 namespace NoDriver.Core.Tools
 {
-    internal class PlatformHelper
+    internal static class PlatformHelper
     {
         public static bool IsPosix()
         {

@@ -32,7 +32,7 @@ namespace Example
 
         private static async Task Run()
         {
-            var resolution = ScreenHelper.GetResolution();
+            var resolution = await ScreenHelper.GetResolutionAsync();
 
             var SCREEN_WIDTH = resolution.Width;
             var NUM_WINS = SCREEN_WIDTH / 325;

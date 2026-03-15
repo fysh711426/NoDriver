@@ -1,4 +1,5 @@
 ﻿using NoDriver.Core.Runtime;
+using System.Text.Json;
 using Cdp = NoDriver.Cdp;
 
 namespace Example
@@ -19,8 +20,9 @@ namespace Example
                     if (conn is Tab tab)
                     {
                         Console.WriteLine("\nRequestPaused handler");
+                        Console.WriteLine(JsonSerializer.Serialize(e, new JsonSerializerOptions { WriteIndented = true }));
                         Console.WriteLine($"Event: {e.GetType().FullName}");
-                        Console.WriteLine($"TAB = {tab.ToString()})");
+                        Console.WriteLine($"TAB = {tab})");
 
                         await tab.FeedCdpAsync(Cdp.Fetch.ContinueRequest(RequestId: e.RequestId));
                     }

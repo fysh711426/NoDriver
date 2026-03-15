@@ -313,7 +313,7 @@ namespace NoDriver.Core.Runtime
         //ok
         public async Task<List<(int Left, int Top, int Width, int Height)>?> TileWindowsAsync(List<Tab>? windows = null, int maxColumns = 0, CancellationToken token = default)
         {
-            var resolution = ScreenHelper.GetResolution();
+            var resolution = await ScreenHelper.GetResolutionAsync(token);
             var screenWidth = resolution.Width;
             var screenHeight = resolution.Height;
 
