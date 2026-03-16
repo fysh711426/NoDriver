@@ -725,7 +725,7 @@ namespace NoDriver.Core.Runtime
 
             await SendAsync(Cdp.Input.SynthesizeScrollGesture(
                 0, 0,
-                XDistance: -(bounds.Height * (amount / 100.0)),
+                YDistance: -(bounds.Height * (amount / 100.0)),
                 YOverscroll: 0,
                 XOverscroll: 0,
                 PreventFling: true,
@@ -744,6 +744,7 @@ namespace NoDriver.Core.Runtime
             await SendAsync(Cdp.Input.SynthesizeScrollGesture(
                 0, 0,
                 YDistance: bounds.Height * (amount / 100.0),
+                YOverscroll: 0,
                 XOverscroll: 0,
                 PreventFling: true,
                 RepeatDelayMs: 0,

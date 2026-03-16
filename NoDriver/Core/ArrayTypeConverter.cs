@@ -1,4 +1,5 @@
 ﻿using NoDriver.Core.Tools;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -6,12 +7,21 @@ namespace NoDriver.Core
 {
     public class ArrayTypeConverter : JsonConverter<IArrayType?>
     {
-        private static Type? GetValueType(Type objectType) =>
-            objectType
-                .BaseTypesAndSelf()
-                .Where(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(ArrayType<>))
-                .Select(t => t.GetGenericArguments()[0])
-                .FirstOrDefault();
+        private static readonly ConcurrentDictionary<Type, Lazy<Type?>> _valueTypeCache = new();
+
+        private static Type? GetValueType(Type objectType)
+        {
+            return _valueTypeCache.GetOrAdd(objectType, type => new Lazy<Type?>(() =>
+            {
+                return type
+                    .BaseTypesAndSelf()
+                    .Where(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(ArrayType<>))
+                    .Select(t => t.GetGenericArguments()[0])
+                    .FirstOrDefault();
+            })).Value;
+        }
+
+        public override bool HandleNull => true;
 
         public override bool CanConvert(Type objectType)
         {
@@ -22,24 +32,24 @@ namespace NoDriver.Core
         {
             var valueType = GetValueType(typeToConvert);
 
-            if (reader.TokenType == JsonTokenType.Null || valueType is null)
-                return null;
+            if (valueType == null)
+                return Activator.CreateInstance(typeToConvert, null) as IArrayType;
 
-            var listType = typeof(IReadOnlyList<>).MakeGenericType(valueType);
-            var items = JsonSerializer.Deserialize(ref reader, listType, options);
+            if (reader.TokenType == JsonTokenType.Null)
+            {
+                var emptyList = Activator.CreateInstance(
+                    typeof(List<>).MakeGenericType(valueType));
+                return Activator.CreateInstance(typeToConvert, emptyList) as IArrayType;
+            }
 
+            var items = JsonSerializer.Deserialize(ref reader,
+                typeof(IReadOnlyList<>).MakeGenericType(valueType), options);
             return Activator.CreateInstance(typeToConvert, items) as IArrayType;
         }
 
         public override void Write(Utf8JsonWriter writer, IArrayType? value, JsonSerializerOptions options)
         {
-            if (value?.RawItems == null)
-            {
-                //writer.WriteNullValue();
-                JsonSerializer.Serialize(writer, Enumerable.Empty<object>());
-                return;
-            }
-            JsonSerializer.Serialize(writer, value.RawItems, value.RawItems.GetType());
+            JsonSerializer.Serialize(writer, value?.RawItems ?? Enumerable.Empty<object>(), options);
         }
     }
 }

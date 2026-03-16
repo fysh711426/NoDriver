@@ -26,7 +26,7 @@ namespace Example
                         if (result.Base64Encoded)
                             body = Encoding.UTF8.GetString(Convert.FromBase64String(body));
 
-                        Console.WriteLine($"{e.Response.Url}\nbody[:100]:\n{body.Take(100)}");
+                        Console.WriteLine($"{e.Response.Url}\nbody[:100]:\n{new string(body.Take(100).ToArray())}\n");
                     }
                     catch (ProtocolErrorException) { }
                 };

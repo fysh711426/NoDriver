@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Collections.Concurrent;
+using System.Reflection;
 
 namespace NoDriver.Core
 {
@@ -11,13 +12,18 @@ namespace NoDriver.Core
     {
         object? IPrimitiveType.RawValue => Value;
 
-        public static List<TSub> GetEnums<TSub>() where TSub : PrimitiveType<TValue>
+        private static readonly ConcurrentDictionary<Type, Lazy<object>> _enumCache = new();
+
+        public static IReadOnlyList<TSub> GetEnums<TSub>() where TSub : PrimitiveType<TValue>
         {
-            return typeof(TSub)
-                .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
-                .Where(f => typeof(TSub).IsAssignableFrom(f.FieldType))
-                .Select(f => (TSub)f.GetValue(null)!)
-                .ToList();
+            return (IReadOnlyList<TSub>)_enumCache.GetOrAdd(typeof(TSub), type => new Lazy<object>(() =>
+            {
+                return type
+                    .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+                    .Where(f => type.IsAssignableFrom(f.FieldType))
+                    .Select(f => (TSub)f.GetValue(null)!)
+                    .ToList().AsReadOnly();
+            })).Value;
         }
     }
 }

@@ -1,4 +1,5 @@
 ﻿using NoDriver.Core.Runtime;
+using System.Text.Json;
 using Cdp = NoDriver.Cdp;
 
 namespace Example
@@ -14,7 +15,7 @@ namespace Example
 
                 void receiveHandler(Cdp.Network.ResponseReceived e, Connection _)
                 {
-                    Console.WriteLine(e.Response);
+                    Console.WriteLine(JsonSerializer.Serialize(e.Response, new JsonSerializerOptions { WriteIndented = true }));
                 }
 
                 void sendHandler(Cdp.Network.RequestWillBeSent e, Connection _)

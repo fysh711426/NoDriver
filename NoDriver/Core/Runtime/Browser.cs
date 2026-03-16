@@ -303,7 +303,7 @@ namespace NoDriver.Core.Runtime
         //ok 要測試
         public async Task GrantAllPermissionsAsync(CancellationToken token = default)
         {
-            var permissions = Cdp.Browser.PermissionType.GetEnums<Cdp.Browser.PermissionType>();
+            var permissions = Cdp.Browser.PermissionType.GetEnums<Cdp.Browser.PermissionType>().ToList();
             //permissions.Remove(Cdp.Browser.PermissionType.FLASH);
             permissions.Remove(Cdp.Browser.PermissionType.CAPTURED_SURFACE_CONTROL);
             if (Connection != null)
