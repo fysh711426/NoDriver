@@ -9,8 +9,7 @@ namespace NoDriver.Core.Tools
         public static async Task<(int Width, int Height)> GetResolutionAsync(CancellationToken token = default)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                //return GetWindowsResolution();
-                return GetWindowsPhysicalResolution();
+                return GetWindowsResolution();
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 return await GetLinuxResolutionAsync();
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
@@ -37,48 +36,10 @@ namespace NoDriver.Core.Tools
             catch { }
             return (1920, 1080);
         }
-        //----- Windows -----
 
-        //----- Windows Physical -----
         [DllImport("user32.dll")]
-        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct RECT 
-        { 
-            public int Left, Top, Right, Bottom;
-        }
-
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-        private struct MONITORINFO
-        {
-            public int Size;
-            public RECT Monitor;
-            public RECT Work;
-            public uint Flags;
-        }
-
-        public static (int Width, int Height) GetWindowsPhysicalResolution()
-        {
-            try
-            {
-                var mi = new MONITORINFO();
-                mi.Size = Marshal.SizeOf(mi);
-                var hMonitor = MonitorFromWindow(IntPtr.Zero, 1);
-                if (GetMonitorInfo(hMonitor, ref mi))
-                {
-                    var width = mi.Monitor.Right - mi.Monitor.Left;
-                    var height = mi.Monitor.Bottom - mi.Monitor.Top;
-                    return (width, height);
-                }
-            }
-            catch { }
-            return (1920, 1080);
-        }
-        //----- Windows Physical -----
+        public static extern bool SetProcessDPIAware();
+        //----- Windows -----
 
         //----- Mac -----
         [DllImport("CoreGraphics")]
