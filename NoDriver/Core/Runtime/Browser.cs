@@ -1,12 +1,36 @@
 ﻿using NoDriver.Core.Tools;
 using System.Diagnostics;
+using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
 {
+    /// <summary>
+    /// The Browser object is the "root" of the hierarchy and contains a reference
+    /// to the browser parent process.<br/>
+    /// there should usually be only 1 instance of this.<br/>
+    /// <br/>
+    /// All opened tabs, extra browser screens and resources will not cause a new Browser process,<br/>
+    /// but rather create additional :class:`Tab` objects.<br/>
+    /// <br/>
+    /// So, besides starting your instance and first/additional tabs, you don't actively use it a lot under normal conditions.<br/>
+    /// <br/>
+    /// Tab objects will represent and control<br/>
+    ///  - tabs (as you know them)<br/>
+    ///  - browser windows (new window)<br/>
+    ///  - iframe<br/>
+    ///  - background processes<br/>
+    /// <br/>
+    /// note:<br/>
+    /// the Browser object is not instantiated by constructor but using the asynchronous :meth:`Browser.Create` method.<br/>
+    /// <br/>
+    /// note:<br/>
+    /// in Chromium based browsers, there is a parent process which keeps running all the time, even if<br/>
+    /// there are no visible browser windows. sometimes it's stubborn to close it, so make sure after using<br/>
+    /// this library, the browser is correctly and fully closed/exited/killed.
+    /// </summary>
     public class Browser : IDisposable, IAsyncDisposable
     {
         private readonly ConcurrentList<Tab> _targets = new();
@@ -32,13 +56,16 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        //ok
         public IReadOnlyList<Tab> Targets => _targets.ToList();
 
-        //ok
+        /// <summary>
+        /// Returns the target which was launched with the browser.
+        /// </summary>
         public Tab? MainTab => _targets.FirstOrDefault(it => it.Target?.Type == "page");
 
-        //ok
+        /// <summary>
+        /// Returns the current targets which are of type "page".
+        /// </summary>
         public List<Tab> Tabs => _targets.Where(it => it.Target?.Type == "page");
 
         public CookieJar Cookies
@@ -51,14 +78,18 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        //ok
         public bool Stopped => _process == null || _process.HasExited;
 
         private Browser()
         {
         }
 
-        //ok
+        /// <summary>
+        /// Entry point for creating an instance.
+        /// </summary>
+        /// <param name="config"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public static async Task<Browser> CreateAsync(Config? config = null, CancellationToken token = default)
         {
             var browser = new Browser();
@@ -66,7 +97,12 @@ namespace NoDriver.Core.Runtime
             return await browser.StartAsync(token);
         }
 
-        //ok
+        /// <summary>
+        /// Wait for time seconds. important to use, especially in between page navigation.
+        /// </summary>
+        /// <param name="time"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task WaitAsync(double time = 0.1, CancellationToken token = default)
         {
             await Task.WhenAll(
@@ -74,7 +110,11 @@ namespace NoDriver.Core.Runtime
                 Task.Delay(TimeSpan.FromSeconds(time), token));
         }
 
-        //ok 要測試
+        /// <summary>
+        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
+        /// </summary>
+        /// <param name="infoChanged"></param>
+        /// <returns></returns>
         private async Task HandleTargetInfoChanged(Cdp.Target.TargetInfoChanged infoChanged)
         {
             var targetInfo = infoChanged.TargetInfo;
@@ -82,21 +122,25 @@ namespace NoDriver.Core.Runtime
             if (target != null)
             {
                 //if (logger.IsEnabled(LogLevel.Debug))
-                {
-                    var sb = new StringBuilder();
-                    var changes = Util.CompareTargetInfo(target.Target, targetInfo);
-                    foreach (var change in changes)
-                    {
-                        sb.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
-                    }
-                    Console.WriteLine($"Target #{_targets.IndexOf(target)} has changed: {sb.ToString()}");
-                }
+                //{
+                //    var sb = new StringBuilder();
+                //    var changes = Util.CompareTargetInfo(target.Target, targetInfo);
+                //    foreach (var change in changes)
+                //    {
+                //        sb.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
+                //    }
+                //    Console.WriteLine($"Target #{_targets.IndexOf(target)} has changed: {sb.ToString()}");
+                //}
                 target.Target = targetInfo;
             }
             await UpdateTargetsAsync();
         }
 
-        //ok 要測試
+        /// <summary>
+        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
+        /// </summary>
+        /// <param name="created"></param>
+        /// <returns></returns>
         private async Task HandleTargetCreated(Cdp.Target.TargetCreated created)
         {
             var targetInfo = created.TargetInfo;
@@ -112,7 +156,11 @@ namespace NoDriver.Core.Runtime
             await UpdateTargetsAsync();
         }
 
-        //ok 要測試
+        /// <summary>
+        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
+        /// </summary>
+        /// <param name="destroyed"></param>
+        /// <returns></returns>
         private async Task HandleTargetDestroyed(Cdp.Target.TargetDestroyed destroyed)
         {
             var target = _targets.FirstOrDefault(it => it.Target?.TargetId == destroyed.TargetId);
@@ -128,13 +176,28 @@ namespace NoDriver.Core.Runtime
             await UpdateTargetsAsync();
         }
 
-        //ok 要測試
+        /// <summary>
+        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
+        /// </summary>
+        /// <param name="crashed"></param>
+        /// <returns></returns>
         private async Task HandleTargetCrashed(Cdp.Target.TargetCrashed crashed)
         {
             await UpdateTargetsAsync();
         }
 
-        //ok
+        /// <summary>
+        /// Top level get. utilizes the first tab to retrieve given url.<br/>
+        /// convenience function known from selenium.<br/>
+        /// this function handles waits and detects when DOM events fired, so it's the safest
+        /// way of navigating.
+        /// </summary>
+        /// <param name="url">The url to navigate to.</param>
+        /// <param name="newTab">Open new tab.</param>
+        /// <param name="newWindow">Open new window.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
         public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false, CancellationToken token = default)
         {
             if (Connection == null)
@@ -170,6 +233,25 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok 要測試
+        /// <summary>
+        /// Creates a new browser context - mostly useful if you want to use proxies for different browser instances<br/>
+        /// since chrome usually can only use 1 proxy per browser.<br/>
+        /// socks5 with authentication is supported by using a forwarder proxy, the<br/>
+        /// correct string to use socks proxy with username/password auth is socks://USERNAME:PASSWORD@SERVER:PORT<br/>
+        /// http/https proxies with authentication are also supported: http://USERNAME:PASSWORD@SERVER:PORT
+        /// </summary>
+        /// <param name="url"></param>
+        /// <param name="newTab"></param>
+        /// <param name="newWindow"></param>
+        /// <param name="disposeOnDetach">If specified, disposes this context when debugging session disconnects.</param>
+        /// <param name="proxyServer">Proxy server, similar to the one passed to –proxy-server.</param>
+        /// <param name="proxyBypassList">Proxy bypass list, similar to the one passed to –proxy-bypass-list.</param>
+        /// <param name="originsWithUniversalNetworkAccess">An optional list of origins to grant unlimited cross-origin access to. Parts of the URL other than those constituting origin are ignored.</param>
+        /// <param name="clientCertificates">Custom SSL context for HTTPS proxy connections. If None, a default context is used.</param>
+        /// <param name="remoteCertificateValidationCallback"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
         public async Task<Tab> CreateContextAsync(
             string url = "chrome://welcome",
             bool newTab = false,
@@ -179,6 +261,7 @@ namespace NoDriver.Core.Runtime
             List<string>? proxyBypassList = null,
             List<string>? originsWithUniversalNetworkAccess = null,
             X509Certificate2Collection? clientCertificates = null,
+            RemoteCertificateValidationCallback? remoteCertificateValidationCallback = null,
             CancellationToken token = default)
         {
             if (Connection == null)
@@ -186,7 +269,8 @@ namespace NoDriver.Core.Runtime
 
             if (!string.IsNullOrWhiteSpace(proxyServer))
             {
-                var forwarder = new ProxyForwarder(proxyServer, clientCertificates);
+                var forwarder = new ProxyForwarder(proxyServer, 
+                    clientCertificates, remoteCertificateValidationCallback);
                 _proxyForwarders.Add(forwarder);
                 proxyServer = forwarder.ProxyServer;
             }
@@ -210,7 +294,13 @@ namespace NoDriver.Core.Runtime
             return connection;
         }
 
-        //ok
+        /// <summary>
+        /// Launches the actual browser.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        /// <exception cref="FileNotFoundException"></exception>
         public async Task<Browser> StartAsync(CancellationToken token = default)
         {
             if (Config == null)
@@ -310,7 +400,6 @@ namespace NoDriver.Core.Runtime
                 await Connection.SendAsync(Cdp.Browser.GrantPermissions(permissions), token: token);
         }
 
-        //ok
         public async Task<List<(int Left, int Top, int Width, int Height)>?> TileWindowsAsync(List<Tab>? windows = null, int maxColumns = 0, CancellationToken token = default)
         {
             var resolution = await ScreenHelper.GetResolutionAsync(token);
@@ -403,7 +492,6 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
-        //ok
         public async Task UpdateTargetsAsync(CancellationToken token = default)
         {
             if (Connection != null)
@@ -560,8 +648,20 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Allows to get `Tab` instances by using browser[0], browser[1].
+        /// </summary>
+        /// <param name="index"></param>
+        /// <returns></returns>
         public Tab this[int index] => Tabs[index];
 
+        /// <summary>
+        /// A string is also allowed. it will then return the first tab where the `Cdp.Target.TargetInfo` object<br/>
+        /// (as json string) contains the given key, or the first tab in case no matches are found. eg:<br/>
+        /// `browser["google"]` gives the first tab which has "google" in it's serialized target object.
+        /// </summary>
+        /// <param name="query"></param>
+        /// <returns></returns>
         public Tab this[string query]
         {
             get
