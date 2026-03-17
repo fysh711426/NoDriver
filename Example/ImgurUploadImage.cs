@@ -16,7 +16,7 @@ namespace Example
                 var tempTab = await browser.GetAsync("https://github.com/ultrafunkamsterdam/undetected-chromedriver", newTab: true);
 
                 await tempTab.WaitAsync();
-                await tempTab.SaveScreenshotAsync(savePath);
+                savePath = await tempTab.SaveScreenshotAsync(savePath);
                 await tempTab.CloseAsync();
 
                 var consent = await tab.FindAsync("Consent", bestMatch: true);

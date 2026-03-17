@@ -20,7 +20,7 @@ namespace Example
                     await elem.FlashAsync();
                 }
 
-                var page2 = await browser.GetAsync("https://twitter.com", newTab: true);
+                var page2 = await browser.GetAsync("https://x.com", newTab: true);
                 var page3 = await browser.GetAsync("https://github.com/ultrafunkamsterdam/nodriver", newWindow: true);
 
                 var pages = new List<Tab>()

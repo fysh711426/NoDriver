@@ -36,9 +36,6 @@ namespace NoDriver.Core.Tools
             catch { }
             return (1920, 1080);
         }
-
-        [DllImport("user32.dll")]
-        public static extern bool SetProcessDPIAware();
         //----- Windows -----
 
         //----- Mac -----

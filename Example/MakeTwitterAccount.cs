@@ -15,7 +15,7 @@ namespace Example
         {
             await using (var browser = await Browser.CreateAsync())
             {
-                var tab = await browser.GetAsync("https://twitter.com");
+                var tab = await browser.GetAsync("https://x.com/?lang=en");
 
                 Console.WriteLine(@"Finding the ""create account"" button.");
                 var createAccount = await tab.FindAsync("create account", bestMatch: true);
@@ -107,8 +107,8 @@ namespace Example
                 if (signUpBtn == null)
                     throw new InvalidOperationException("SignUp button is null.");
 
-                //Console.WriteLine(@"Clicking ""sign up""  button.");
-                //await signUpBtn.ClickAsync();
+                Console.WriteLine(@"Clicking ""sign up""  button.");
+                await signUpBtn.ClickAsync();
 
                 Console.WriteLine(@"The rest of the ""implementation"" is out of scope.");
                 await tab.WaitAsync(10);

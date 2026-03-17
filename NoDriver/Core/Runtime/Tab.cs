@@ -789,8 +789,9 @@ namespace NoDriver.Core.Runtime
         {
             if (_downloadBehavior == null || _downloadBehavior.Count == 0)
             {
-                var dirPath = Path.Combine(Directory.GetCurrentDirectory(), "downloads");
-                Directory.CreateDirectory(dirPath);
+                var dirPath = Path.Combine(AppContext.BaseDirectory, "downloads");
+                if (!Directory.Exists(dirPath))
+                    Directory.CreateDirectory(dirPath);
                 await SetDownloadPathAsync(dirPath, token);
                 Console.WriteLine($"No download path set, using default: {dirPath}");
             }
@@ -867,13 +868,12 @@ namespace NoDriver.Core.Runtime
                         ext = ".png";
                         format = "png";
                     }
-
-                    path = Path.Combine(Directory.GetCurrentDirectory(), $"{candidate}{ext}");
+                    path = Path.Combine(AppContext.BaseDirectory, $"{candidate}{ext}");
                 }
             }
             else
             {
-                path = Path.Combine(Directory.GetCurrentDirectory(), filename);
+                path = Path.Combine(AppContext.BaseDirectory, filename);
             }
 
             if (string.IsNullOrWhiteSpace(path))
@@ -881,7 +881,8 @@ namespace NoDriver.Core.Runtime
 
             var parentDir = Path.GetDirectoryName(path);
             if (!string.IsNullOrWhiteSpace(parentDir))
-                Directory.CreateDirectory(parentDir);
+                if (!Directory.Exists(parentDir))
+                    Directory.CreateDirectory(parentDir);
 
             var result = await SendAsync(Cdp.Page.CaptureScreenshot(format, CaptureBeyondViewport: fullPage), token: token);
             var base64Data = result.Data;
@@ -896,10 +897,10 @@ namespace NoDriver.Core.Runtime
         //ok 要測試
         public async Task SetDownloadPathAsync(string path, CancellationToken token = default)
         {
-            var fullPath = Path.GetFullPath(path);
-            Directory.CreateDirectory(fullPath);
-            await SendAsync(Cdp.Browser.SetDownloadBehavior(Behavior: "allow", DownloadPath: fullPath), token: token);
-            _downloadBehavior = new List<string> { "allow", fullPath };
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+            await SendAsync(Cdp.Browser.SetDownloadBehavior(Behavior: "allow", DownloadPath: path), token: token);
+            _downloadBehavior = new List<string> { "allow", path };
         }
 
         //ok 要測試
@@ -1091,7 +1092,6 @@ namespace NoDriver.Core.Runtime
             {
                 if (!string.IsNullOrWhiteSpace(templateImage))
                 {
-                    templateImage = Path.GetFullPath(templateImage);
                     if (!File.Exists(templateImage))
                         throw new FileNotFoundException($"{templateImage} was not found.");
                 }

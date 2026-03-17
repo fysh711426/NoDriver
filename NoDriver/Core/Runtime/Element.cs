@@ -395,7 +395,7 @@ namespace NoDriver.Core.Runtime
         //ok
         public async Task SendFileAsync(params string[] filePaths)
         {
-            await SendFileAsync(filePaths);
+            await SendFileAsync(filePaths.ToList());
         }
 
         //ok 要測試
@@ -506,12 +506,12 @@ namespace NoDriver.Core.Runtime
                         ext = ".png";
                         format = "png";
                     }
-                    path = Path.Combine(Directory.GetCurrentDirectory(), $"{candidate}{ext}");
+                    path = Path.Combine(AppContext.BaseDirectory, $"{candidate}{ext}");
                 }
             }
             else
             {
-                path = Path.Combine(Directory.GetCurrentDirectory(), filename);
+                path = Path.Combine(AppContext.BaseDirectory, filename);
             }
 
             if (string.IsNullOrWhiteSpace(path))
@@ -519,7 +519,8 @@ namespace NoDriver.Core.Runtime
 
             var parentDir = Path.GetDirectoryName(path);
             if (!string.IsNullOrWhiteSpace(parentDir))
-                Directory.CreateDirectory(parentDir);
+                if (!Directory.Exists(parentDir))
+                    Directory.CreateDirectory(parentDir);
 
             var result = await _tab.SendAsync(
                 Cdp.Page.CaptureScreenshot(format, Clip: viewport, CaptureBeyondViewport: true), token: token);
@@ -642,9 +643,9 @@ namespace NoDriver.Core.Runtime
 
             var directoryPath = folder;
             if (string.IsNullOrWhiteSpace(directoryPath))
-                directoryPath = Path.Combine(Directory.GetCurrentDirectory(), "downloads");
-            directoryPath = Path.GetFullPath(directoryPath);
-            Directory.CreateDirectory(directoryPath);
+                directoryPath = Path.Combine(AppContext.BaseDirectory, "downloads");
+            if (!Directory.Exists(directoryPath))
+                Directory.CreateDirectory(directoryPath);
 
             await _tab.SendAsync(Cdp.Browser.SetDownloadBehavior("allow", DownloadPath: directoryPath), token: token);
             await CallAsync("pause", token);
