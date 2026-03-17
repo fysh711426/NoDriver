@@ -360,12 +360,7 @@ namespace NoDriver.Core.Runtime
                 Console.WriteLine($"Could not calculate box model for {this}");
                 return;
             }
-
-            var endPoint = destPoint;
-            if (relative)
-                endPoint = (startPos.Center.X + destPoint.X, startPos.Center.Y + destPoint.Y);
-
-            await _tab.MouseDragAsync(startPos.Center, endPoint, false, steps, token);
+            await _tab.MouseDragAsync(startPos.Center, destPoint, relative, steps, token);
         }
 
         //ok
