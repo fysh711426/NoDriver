@@ -390,7 +390,6 @@ namespace NoDriver.Core.Runtime
             return this;
         }
 
-        //ok 要測試
         public async Task GrantAllPermissionsAsync(CancellationToken token = default)
         {
             var permissions = Cdp.Browser.PermissionType.GetEnums<Cdp.Browser.PermissionType>().ToList();

@@ -23,7 +23,7 @@ namespace NoDriver.Core.Runtime
         }
 
         public string Message => JsonSerializer.Serialize(
-            new { Method, Params, Id }, JsonProtocolSerialization.Settings);
+            new { Method, Params = (object?)Params, Id }, JsonProtocolSerialization.Settings);
 
         public bool HasException => _tcs.Task.IsFaulted || _tcs.Task.IsCanceled;
 
