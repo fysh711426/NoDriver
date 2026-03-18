@@ -171,14 +171,29 @@ namespace Test
         }
 
         [TestMethod]
-        public void Dispose_ShouldKillProcessAndClearTargets()
+        public async Task DisposeAsync_ShouldKillProcessAndClearTargets()
         {
             // Arrange
             var config = new Config { Headless = true };
-            var browserToDispose = Browser.CreateAsync(config).GetAwaiter().GetResult();
+            var browserToDispose = await Browser.CreateAsync(config);
 
             // Act
-            browserToDispose.DisposeAsync().GetAwaiter().GetResult();
+            await browserToDispose.DisposeAsync();
+
+            // Assert
+            Assert.IsTrue(browserToDispose.Stopped, "執行 Dispose 後瀏覽器狀態應為已停止");
+            Assert.AreEqual(0, browserToDispose.Targets.Count, "執行 Dispose 後 Targets 應被清空");
+        }
+
+        [TestMethod]
+        public async Task Dispose_ShouldKillProcessAndClearTargets()
+        {
+            // Arrange
+            var config = new Config { Headless = true };
+            var browserToDispose = await Browser.CreateAsync(config);
+
+            // Act
+            browserToDispose.Dispose();
 
             // Assert
             Assert.IsTrue(browserToDispose.Stopped, "執行 Dispose 後瀏覽器狀態應為已停止");

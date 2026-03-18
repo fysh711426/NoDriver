@@ -6,7 +6,6 @@ using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
 {
@@ -37,6 +36,11 @@ namespace NoDriver.Core.Runtime
             Browser = browser;
         }
 
+        /// <summary>
+        /// Opens the websocket connection. should not be called manually by users.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task ConnectAsync(CancellationToken token = default)
         {
             if (!Closed)
@@ -63,6 +67,11 @@ namespace NoDriver.Core.Runtime
             await RegisterHandlersAsync(token);
         }
 
+        /// <summary>
+        /// Closes the websocket connection. should not be called manually by users.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task DisconnectAsync(CancellationToken token = default)
         {
             if (WebSocket != null)
@@ -97,7 +106,22 @@ namespace NoDriver.Core.Runtime
             type.GetCustomAttribute<MethodNameAttribute>()?.MethodName ??
                 throw new Exception($"{nameof(MethodNameAttribute)} is required on type {type.Name} but it is not presented.");
 
-        //ok
+        /// <summary>
+        /// Add a handler for given event.<br/>
+        /// <br/>
+        /// If you want to receive event updates (network traffic are also 'events') you can add handlers for those events.<br/>
+        /// handlers can be regular callback functions or async coroutine functions (and also just lamba's).<br/>
+        /// for example, you want to check the network traffic:<br/>
+        /// <br/>
+        /// .. code-block::<br/>
+        /// <br/>
+        ///     tab.AddHandler&lt;Cdp.Network.RequestWillBeSent&gt;((e, _) =&gt; Console.WriteLine($"network event =&gt; {e.Request}"))<br/>
+        /// <br/>
+        /// The next time you make network traffic you will see your console print like crazy.
+        /// </summary>
+        /// <typeparam name="TEvent"></typeparam>
+        /// <param name="handler"></param>
+        /// <exception cref="Exception"></exception>
         public void AddHandler<TEvent>(AsyncEventHandler<TEvent> handler) where TEvent : IEvent
         {
             if (handler == null) 
@@ -105,7 +129,22 @@ namespace NoDriver.Core.Runtime
             AddHandlerInternal(new EventHandlerWrapper<TEvent>(handler));
         }
 
-        //ok
+        /// <summary>
+        /// Add a handler for given event.<br/>
+        /// <br/>
+        /// If you want to receive event updates (network traffic are also 'events') you can add handlers for those events.<br/>
+        /// handlers can be regular callback functions or async coroutine functions (and also just lamba's).<br/>
+        /// for example, you want to check the network traffic:<br/>
+        /// <br/>
+        /// .. code-block::<br/>
+        /// <br/>
+        ///     tab.AddHandler&lt;Cdp.Network.RequestWillBeSent&gt;((e, _) =&gt; Console.WriteLine($"network event =&gt; {e.Request}"))<br/>
+        /// <br/>
+        /// The next time you make network traffic you will see your console print like crazy.
+        /// </summary>
+        /// <typeparam name="TEvent"></typeparam>
+        /// <param name="handler"></param>
+        /// <exception cref="Exception"></exception>
         public void AddHandler<TEvent>(SyncEventHandler<TEvent> handler) where TEvent : IEvent
         {
             if (handler == null)
@@ -113,7 +152,6 @@ namespace NoDriver.Core.Runtime
             AddHandlerInternal(new EventHandlerWrapper<TEvent>(handler));
         }
 
-        //ok
         private void AddHandlerInternal<TEvent>(EventHandlerWrapper<TEvent> wrapper) where TEvent : IEvent
         {
             var eventName = GetMethodName(typeof(TEvent));
@@ -124,19 +162,26 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        //ok
+        /// <summary>
+        /// Remove a handler for given event.
+        /// </summary>
+        /// <typeparam name="TEvent"></typeparam>
+        /// <param name="handler"></param>
         public void RemoveHandler<TEvent>(AsyncEventHandler<TEvent> handler) where TEvent : IEvent
         {
             RemoveHandlerInternal<TEvent>(handler);
         }
 
-        //ok
+        /// <summary>
+        /// Remove a handler for given event.
+        /// </summary>
+        /// <typeparam name="TEvent"></typeparam>
+        /// <param name="handler"></param>
         public void RemoveHandler<TEvent>(SyncEventHandler<TEvent> handler) where TEvent : IEvent
         {
             RemoveHandlerInternal<TEvent>(handler);
         }
 
-        //ok
         private void RemoveHandlerInternal<TEvent>(Delegate handler) where TEvent : IEvent
         {
             var eventName = GetMethodName(typeof(TEvent));
@@ -157,6 +202,13 @@ namespace NoDriver.Core.Runtime
             return domainName == "Target" || domainName == "Storage" || domainName == "Input";
         }
 
+        /// <summary>
+        /// Ensure that for current (event) handlers, the corresponding<br/>
+        /// domain is enabled in the protocol.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="TypeLoadException"></exception>
         private async Task RegisterHandlersAsync(CancellationToken token)
         {
             // 可優化: 將 Domain 的啟用邏輯從 SendAsync 移到 AddHandler
@@ -213,6 +265,18 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Send a protocol command. the commands are made using any of the Cdp.&lt;Domain&gt;.&lt;Method&gt;()'s<br/>
+        /// and is used to send custom cdp commands as well.
+        /// </summary>
+        /// <typeparam name="TResponse"></typeparam>
+        /// <param name="command">The generator object created by a cdp method.</param>
+        /// <param name="isUpdate">Internal flag<br/>
+        /// Prevents infinite loop by skipping the registeration of handlers<br/>
+        /// when multiple calls to connection.SendAsync() are made.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
         public async Task<TResponse> SendAsync<TResponse>(
             ICommand<TResponse> command, bool isUpdate = false, CancellationToken token = default) where TResponse : IType
         {
