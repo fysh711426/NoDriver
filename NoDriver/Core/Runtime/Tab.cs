@@ -14,8 +14,11 @@ namespace NoDriver.Core.Runtime
         
         private bool _prepHeadlessDone = false;
         private bool _prepExpertDone = false;
-        
-        //ok
+
+        /// <summary>
+        /// Get the inspector url. this url can be used in another browser to show you the devtools interface for<br/>
+        /// current tab. useful for debugging (and headless).
+        /// </summary>
         public string InspectorUrl
         {
             get
@@ -31,27 +34,22 @@ namespace NoDriver.Core.Runtime
         {
         }
 
-        // ok 要測試
-        public void InspectorOpen()
+        /// <summary>
+        /// Opens the system's browser containing the devtools inspector page<br/>
+        /// for this tab. could be handy, especially to debug in headless mode.
+        /// </summary>
+        /// <returns></returns>
+        public void OpenExternalInspector()
         {
             Process.Start(new ProcessStartInfo(InspectorUrl) { UseShellExecute = true });
         }
 
-        // ok 要測試
-        public Task OpenExternalInspectorAsync()
-        {
-            InspectorOpen();
-            return Task.CompletedTask;
-        }
-
-        // ok
         public async Task<TResponse> FeedCdpAsync<TResponse>(
             ICommand<TResponse> command, CancellationToken token = default) where TResponse : IType
         {
             return await SendOneshotAsync(command, token);
         }
 
-        //ok 要檢查 json 轉換有沒有成功
         public async Task PrepareHeadlessAsync(CancellationToken token = default)
         {
             if (_prepHeadlessDone) 
@@ -63,13 +61,12 @@ namespace NoDriver.Core.Runtime
 
             if (response?.Result?.Value != null)
             {
-                var ua = response.Result.Value.ToString();
+                var ua = response.Result.Value.GetValue<string>();
                 await SendOneshotAsync(Cdp.Network.SetUserAgentOverride(UserAgent: ua.Replace("Headless", "")), token);
             }
             _prepHeadlessDone = true;
         }
 
-        // ok 要測試
         public async Task PrepareExpertAsync(CancellationToken token = default)
         {
             if (_prepExpertDone) 
@@ -91,7 +88,49 @@ namespace NoDriver.Core.Runtime
             _prepExpertDone = true;
         }
 
-        //ok
+        public async Task WaitAsync(double time = 0.5, CancellationToken token = default)
+        {
+            if (Browser != null)
+            {
+                await Task.WhenAll(
+                    Browser.UpdateTargetsAsync(token),
+                    Task.Delay(TimeSpan.FromSeconds(time), token));
+            }
+        }
+
+        /// <summary>
+        /// Top level get. utilizes the first tab to retrieve given url.<br/>
+        /// <br/>
+        /// Convenience function known from selenium.<br/>
+        /// this function handles waits/sleeps and detects when DOM events fired, so it's the safest<br/>
+        /// way of navigating.
+        /// </summary>
+        /// <param name="url">The url to navigate to.</param>
+        /// <param name="newTab">Open new tab.</param>
+        /// <param name="newWindow">Open new window.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false, CancellationToken token = default)
+        {
+            if (Browser == null)
+                throw new InvalidOperationException("This tab has no browser attribute.");
+
+            if (newWindow && !newTab)
+                newTab = true;
+
+            if (newTab)
+            {
+                return await Browser.GetAsync(url, newTab, newWindow, token);
+            }
+            else
+            {
+                var result = await SendAsync(Cdp.Page.Navigate(url), token: token);
+                await WaitAsync(token: token);
+                return this;
+            }
+        }
+
         public async Task<Element?> FindAsync(string text, bool bestMatch = true, bool returnEnclosingElement = true, double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -109,7 +148,6 @@ namespace NoDriver.Core.Runtime
             return item;
         }
 
-        //ok
         public async Task<Element?> SelectAsync(string selector, double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -145,7 +183,6 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        //ok
         public async Task<List<Element>> SelectAllAsync(string selector, double timeout = 10, bool includeFrames = false, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -173,18 +210,6 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        //ok
-        public async Task WaitAsync(double time = 0.5, CancellationToken token = default)
-        {
-            if (Browser != null)
-            {
-                await Task.WhenAll(
-                    Browser.UpdateTargetsAsync(token),
-                    Task.Delay(TimeSpan.FromSeconds(time), token));
-            }
-        }
-
-        // ok 要測試
         public async Task<List<Element>> XPathAsync(string xpath, double timeout = 2.5, CancellationToken token = default)
         {
             var items = new List<Element>();
@@ -213,27 +238,6 @@ namespace NoDriver.Core.Runtime
                 catch (ProtocolErrorException) { }
             }
             return items;
-        }
-
-        //ok
-        public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false, CancellationToken token = default)
-        {
-            if (Browser == null)
-                throw new InvalidOperationException("This tab has no browser attribute.");
-
-            if (newWindow && !newTab)
-                newTab = true;
-
-            if (newTab)
-            {
-                return await Browser.GetAsync(url, newTab, newWindow, token);
-            }
-            else
-            {
-                var result = await SendAsync(Cdp.Page.Navigate(url), token: token);
-                await WaitAsync(token: token);
-                return this;
-            }
         }
 
         //ok
@@ -441,6 +445,38 @@ namespace NoDriver.Core.Runtime
             return items.FirstOrDefault();
         }
 
+        public async Task<Element?> WaitForAsync(string selector = "", string text = "", double timeout = 10, CancellationToken token = default)
+        {
+            var sw = Stopwatch.StartNew();
+            if (!string.IsNullOrWhiteSpace(selector))
+            {
+                var item = await QuerySelectorAsync(selector, token: token);
+                while (item == null)
+                {
+                    item = await QuerySelectorAsync(selector, token: token);
+
+                    if (sw.Elapsed.TotalSeconds > timeout)
+                        throw new TimeoutException($"Time ran out while waiting for {selector}");
+                    await WaitAsync(0.5, token);
+                }
+                return item;
+            }
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                var item = await FindElementByTextAsync(text, token: token);
+                while (item == null)
+                {
+                    item = await FindElementByTextAsync(text, token: token);
+
+                    if (sw.Elapsed.TotalSeconds > timeout)
+                        throw new TimeoutException($"Time ran out while waiting for text: {text}");
+                    await WaitAsync(0.5, token);
+                }
+                return item;
+            }
+            return null;
+        }
+
         //ok
         public async Task<Cdp.DOM.Node?> ResolveNodeAsync(Cdp.DOM.NodeId nodeId, CancellationToken token = default)
         {
@@ -455,25 +491,21 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
-        //ok
         public async Task BackAsync(CancellationToken token = default)
         {
             await SendAsync(Cdp.Runtime.Evaluate("window.history.back()"), token: token);
         }
 
-        // ok 要測試
         public async Task ForwardAsync(CancellationToken token = default) 
         {
             await SendAsync(Cdp.Runtime.Evaluate("window.history.forward()"), token: token);
         }
 
-        //ok
         public async Task ReloadAsync(bool ignoreCache = true, string? scriptToEvaluateOnLoad = null, CancellationToken token = default)
         {
             await SendAsync(Cdp.Page.Reload(IgnoreCache: ignoreCache, ScriptToEvaluateOnLoad: scriptToEvaluateOnLoad), token: token);
         }
 
-        //ok
         public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> EvaluateAsync(string expression, bool awaitPromise = false, bool returnByValue = false, CancellationToken token = default)
         {
             var ser = new Cdp.Runtime.SerializationOptions(
@@ -496,7 +528,6 @@ namespace NoDriver.Core.Runtime
             return (result.Result, result.ExceptionDetails);
         }
 
-        // ok 要測試
         public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> JsDumpsAsync(string objName, bool returnByValue = true, CancellationToken token = default)
         {
             var jsCodeA = 
@@ -634,7 +665,6 @@ namespace NoDriver.Core.Runtime
             return (result.WindowId, result.Bounds);
         }
 
-        //ok
         public async Task<string> GetContentAsync(CancellationToken token = default)
         {
             var docResult = await SendAsync(Cdp.DOM.GetDocument(-1, true), token: token);
@@ -643,50 +673,31 @@ namespace NoDriver.Core.Runtime
             return result.OuterHTML;
         }
 
-        //ok
         public async Task MaximizeAsync(CancellationToken token = default)
         {
             await SetWindowStateAsync(state: "maximize", token: token);
         }
 
-        //ok
         public async Task MinimizeAsync(CancellationToken token = default)
         {
             await SetWindowStateAsync(state: "minimize", token: token);
         }
 
-        //ok
         public async Task FullscreenAsync(CancellationToken token = default)
         {
             await SetWindowStateAsync(state: "fullscreen", token: token);
         }
 
-        //ok
         public async Task MedimizeAsync(CancellationToken token = default)
         {
             await SetWindowStateAsync(state: "normal", token: token);
         }
 
-        //ok
         public async Task SetWindowSizeAsync(int left = 0, int top = 0, int width = 1280, int height = 1024, CancellationToken token = default)
         {
             await SetWindowStateAsync(left, top, width, height, token: token);
         }
 
-        //ok
-        public async Task ActivateAsync(CancellationToken token = default)
-        {
-            if (Target?.TargetId != null)
-                await SendAsync(Cdp.Target.ActivateTarget(Target.TargetId), token: token);
-        }
-
-        //ok
-        public async Task BringToFrontAsync(CancellationToken token = default)
-        {
-            await ActivateAsync(token);
-        }
-
-        //ok
         public async Task SetWindowStateAsync(int left = 0, int top = 0, int width = 1280, int height = 720, string state = "normal", CancellationToken token = default)
         {
             var availableStates = new[]
@@ -716,24 +727,18 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok
-        public async Task ScrollDownAsync(int amount = 25, CancellationToken token = default)
+        public async Task ActivateAsync(CancellationToken token = default)
         {
-            var result = await GetWindowAsync(token);
-            if (result == null)
-                return;
-            var (_, bounds) = result.Value;
-
-            await SendAsync(Cdp.Input.SynthesizeScrollGesture(
-                0, 0,
-                YDistance: -(bounds.Height * (amount / 100.0)),
-                YOverscroll: 0,
-                XOverscroll: 0,
-                PreventFling: true,
-                RepeatDelayMs: 0,
-                Speed: 7777), token: token);
+            if (Target?.TargetId != null)
+                await SendAsync(Cdp.Target.ActivateTarget(Target.TargetId), token: token);
         }
 
         //ok
+        public async Task BringToFrontAsync(CancellationToken token = default)
+        {
+            await ActivateAsync(token);
+        }
+
         public async Task ScrollUpAsync(int amount = 25, CancellationToken token = default)
         {
             var result = await GetWindowAsync(token);
@@ -751,37 +756,17 @@ namespace NoDriver.Core.Runtime
                 Speed: 7777), token: token);
         }
 
-        // ok 要測試
-        public async Task<Element?> WaitForAsync(string selector = "", string text = "", double timeout = 10, CancellationToken token = default)
+        public async Task ScrollDownAsync(int amount = 25, CancellationToken token = default)
         {
-            var sw = Stopwatch.StartNew();
-            if (!string.IsNullOrWhiteSpace(selector))
-            {
-                var item = await QuerySelectorAsync(selector, token: token);
-                while (item == null)
-                {
-                    item = await QuerySelectorAsync(selector, token: token);
+            await ScrollUpAsync(-amount, token);
+        }
 
-                    if (sw.Elapsed.TotalSeconds > timeout) 
-                        throw new TimeoutException($"Time ran out while waiting for {selector}");
-                    await WaitAsync(0.5, token);
-                }
-                return item;
-            }
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                var item = await FindElementByTextAsync(text, token: token);
-                while (item == null)
-                {
-                    item = await FindElementByTextAsync(text, token: token);
-
-                    if (sw.Elapsed.TotalSeconds > timeout) 
-                        throw new TimeoutException($"Time ran out while waiting for text: {text}");
-                    await WaitAsync(0.5, token);
-                }
-                return item;
-            }
-            return null;
+        public async Task SetDownloadPathAsync(string path, CancellationToken token = default)
+        {
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+            await SendAsync(Cdp.Browser.SetDownloadBehavior(Behavior: "allow", DownloadPath: path), token: token);
+            _downloadBehavior = new List<string> { "allow", path };
         }
 
         //ok 要檢查下載是不是正確
@@ -838,10 +823,22 @@ namespace NoDriver.Core.Runtime
             await WaitAsync(0.1, token);
         }
 
-        //ok
         public async Task<string> SaveScreenshotAsync(string filename = "auto", string format = "jpeg", bool fullPage = false, CancellationToken token = default)
         {
             await WaitAsync(1, token: token);
+
+            var ext = "";
+            if (format.ToLowerInvariant() == "jpg" ||
+                format.ToLowerInvariant() == "jpeg")
+            {
+                ext = ".jpg";
+                format = "jpeg";
+            }
+            if (format.ToLowerInvariant() == "png")
+            {
+                ext = ".png";
+                format = "png";
+            }
 
             var path = "";
             if (string.IsNullOrWhiteSpace(filename) || filename == "auto")
@@ -856,18 +853,6 @@ namespace NoDriver.Core.Runtime
                     var dtStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
                     var candidate = $"{uri.Host}__{lastPart}_{dtStr}";
 
-                    var ext = "";
-                    if (format.ToLowerInvariant() == "jpg" ||
-                        format.ToLowerInvariant() == "jpeg")
-                    {
-                        ext = ".jpg";
-                        format = "jpeg";
-                    }
-                    if (format.ToLowerInvariant() == "png")
-                    {
-                        ext = ".png";
-                        format = "png";
-                    }
                     path = Path.Combine(AppContext.BaseDirectory, $"{candidate}{ext}");
                 }
             }
@@ -895,25 +880,15 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok 要測試
-        public async Task SetDownloadPathAsync(string path, CancellationToken token = default)
-        {
-            if (!Directory.Exists(path))
-                Directory.CreateDirectory(path);
-            await SendAsync(Cdp.Browser.SetDownloadBehavior(Behavior: "allow", DownloadPath: path), token: token);
-            _downloadBehavior = new List<string> { "allow", path };
-        }
-
-        //ok 要測試
         public async Task<List<Element>> GetAllLinkedSourcesAsync(CancellationToken token = default)
         {
             var allAssets = await QuerySelectorAllAsync("a,link,img,script,meta", token: token);
             return allAssets.Select(it => new Element(it.Node, this)).ToList();
         }
 
-        //ok 要測試
         public async Task<List<string>> GetAllUrlsAsync(bool absolute = true, CancellationToken token = default)
         {
-            var res = new List<string>();
+            var res = new HashSet<string>();
             var allAssets = await QuerySelectorAllAsync("a,link,img,script,meta", token: token);
 
             foreach (var asset in allAssets)
@@ -963,7 +938,7 @@ namespace NoDriver.Core.Runtime
                     }
                 }
             }
-            return res;
+            return res.ToList();
         }
 
         //ok 要檢查 json 有沒有轉換成功
@@ -1115,28 +1090,30 @@ namespace NoDriver.Core.Runtime
                             File.WriteAllBytes(cfTemplatePath, Util.GetCfTemplate());
                             template = Cv2.ImRead(cfTemplatePath);
                         }
-
-                        using (var templateGray = new Mat())
+                        using (template)
                         {
-                            Cv2.CvtColor(template, templateGray, ColorConversionCodes.BGR2GRAY);
-                            using (var match = new Mat())
+                            using (var templateGray = new Mat())
                             {
-                                Cv2.MatchTemplate(imGray, templateGray, match, TemplateMatchModes.CCoeffNormed);
-                                Cv2.MinMaxLoc(match, out var minV, out var maxV, out var minL, out var maxL);
+                                Cv2.CvtColor(template, templateGray, ColorConversionCodes.BGR2GRAY);
+                                using (var match = new Mat())
+                                {
+                                    Cv2.MatchTemplate(imGray, templateGray, match, TemplateMatchModes.CCoeffNormed);
+                                    Cv2.MinMaxLoc(match, out var minV, out var maxV, out var minL, out var maxL);
 
-                                var xs = maxL.X;
-                                var ys = maxL.Y;
+                                    var xs = maxL.X;
+                                    var ys = maxL.Y;
 
-                                var tmpW = templateGray.Width;
-                                var tmpH = templateGray.Height;
+                                    var tmpW = templateGray.Width;
+                                    var tmpH = templateGray.Height;
 
-                                var xe = xs + tmpW;
-                                var ye = ys + tmpH;
+                                    var xe = xs + tmpW;
+                                    var ye = ys + tmpH;
 
-                                var cx = (xs + xe) / 2;
-                                var cy = (ys + ye) / 2;
+                                    var cx = (xs + xe) / 2;
+                                    var cy = (ys + ye) / 2;
 
-                                return (cx, cy);
+                                    return (cx, cy);
+                                }
                             }
                         }
                     }
@@ -1177,7 +1154,13 @@ namespace NoDriver.Core.Runtime
                 await body.SendKeysAsync("thisisunsafe", token);
         }
 
-        //ok
+        public async Task<bool> ScrollBottomReachedAsync(CancellationToken token = default)
+        {
+            var (remoteObj, exception) = await EvaluateAsync(
+                "document.body.offsetHeight - window.innerHeight <= window.scrollY", token: token);
+            return remoteObj?.Value?.GetValue<bool>() ?? false;
+        }
+
         public async Task MouseMoveAsync(double x, double y, int steps = 10, bool flash = false, CancellationToken token = default)
         {
             steps = steps < 1 ? 1 : steps;
@@ -1209,25 +1192,6 @@ namespace NoDriver.Core.Runtime
                 await FlashPointAsync(x, y, token: token);
         }
 
-        //ok 要檢查 value 是不是有正確轉換
-        public async Task<bool> ScrollBottomReachedAsync(CancellationToken token = default)
-        {
-            var (remoteObj, exception) = await EvaluateAsync(
-                "document.body.offsetHeight - window.innerHeight == window.scrollY", token: token);
-
-            var value = remoteObj?.Value?.ToString();
-
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                if (bool.TryParse(value, out var isReached))
-                {
-                    return isReached;
-                }
-            }
-            return false;
-        }
-
-        //ok 要測試
         public async Task MouseClickAsync(double x, double y, string button = "left", int buttons = 1, int modifiers = 0, CancellationToken token = default)
         {
             await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed", x, y,
@@ -1330,7 +1294,6 @@ namespace NoDriver.Core.Runtime
 
         public static bool operator !=(Tab? left, Tab? right) => !(left == right);
 
-        //ok
         public override string ToString()
         {
             var extra = "";

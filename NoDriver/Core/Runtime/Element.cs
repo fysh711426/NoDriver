@@ -277,17 +277,7 @@ namespace NoDriver.Core.Runtime
                     async Task<double> getValue(string expression)
                     {
                         var (remoteObj, exception) = await _tab.EvaluateAsync(expression, token: token);
-
-                        var value = remoteObj?.Value?.ToString();
-
-                        if (!string.IsNullOrWhiteSpace(value))
-                        {
-                            if (double.TryParse(value, out var result))
-                            {
-                                return result;
-                            }
-                        }
-                        return 0;
+                        return remoteObj?.Value?.GetValue<double>() ?? 0;
                     }
 
                     var scrollY = await getValue("window.scrollY");
@@ -702,17 +692,7 @@ namespace NoDriver.Core.Runtime
         public async Task<bool> IsRecordingAsync(CancellationToken token = default)
         {
             var (remoteObj, exception) = await ApplyAsync(@"(vid) => vid[""_recording""]", token: token);
-
-            var value = remoteObj?.Value?.ToString();
-
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                if (bool.TryParse(value, out var isRecording))
-                {
-                    return isRecording;
-                }
-            }
-            return false;
+            return remoteObj?.Value?.GetValue<bool>() ?? false;
         }
 
         //ok
