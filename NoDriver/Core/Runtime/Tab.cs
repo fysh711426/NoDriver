@@ -817,44 +817,65 @@ namespace NoDriver.Core.Runtime
             await WaitAsync(0.1, token);
         }
 
+        private string GetScreenshotFormat(string format)
+        {
+            var f = format.ToLowerInvariant();
+            if (f == "jpg" || f == "jpeg")
+                return "jpeg";
+            if (f == "png")
+                return "png";
+            return f;
+        }
+
+        private string GetScreenshotPath(string filename, string ext)
+        {
+            if (string.IsNullOrWhiteSpace(filename) || filename == "auto")
+            {
+                if (Target == null)
+                    return "";
+
+                var uri = new Uri(Target.Url);
+                var lastPart = uri.AbsolutePath.Split('/').Last();
+                var index = lastPart.LastIndexOf('?');
+                if (index != -1)
+                    lastPart = lastPart.Substring(0, index);
+                var dtStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                var candidate = $"{uri.Host}__{lastPart}_{dtStr}";
+
+                return Path.Combine(AppContext.BaseDirectory, $"{candidate}{ext}");
+            }
+            return Path.Combine(AppContext.BaseDirectory, filename);
+        }
+
+        private async Task<byte[]> GetScreenshotDataAsync(string format, bool fullPage, CancellationToken token)
+        {
+            var result = await SendAsync(Cdp.Page.CaptureScreenshot(format, CaptureBeyondViewport: fullPage), token: token);
+            var base64Data = result.Data;
+            if (string.IsNullOrWhiteSpace(base64Data))
+                throw new InvalidOperationException("Could not take screenshot. most possible cause is the page has not finished loading yet.");
+            return Convert.FromBase64String(base64Data);
+        }
+
+        public async Task<byte[]> CaptureScreenshotAsync(string format = "jpeg", bool fullPage = false, CancellationToken token = default)
+        {
+            await WaitAsync(1, token: token);
+            format = GetScreenshotFormat(format);
+            return await GetScreenshotDataAsync(format, fullPage, token);
+        }
+
         public async Task<string> SaveScreenshotAsync(string filename = "auto", string format = "jpeg", bool fullPage = false, CancellationToken token = default)
         {
             await WaitAsync(1, token: token);
 
-            var ext = "";
-            if (format.ToLowerInvariant() == "jpg" ||
-                format.ToLowerInvariant() == "jpeg")
+            format = GetScreenshotFormat(format);
+            var ext = format switch
             {
-                ext = ".jpg";
-                format = "jpeg";
-            }
-            if (format.ToLowerInvariant() == "png")
-            {
-                ext = ".png";
-                format = "png";
-            }
+                "jpeg" => ".jpg",
+                "png" => ".png",
+                _ => ""
+            };
 
-            var path = "";
-            if (string.IsNullOrWhiteSpace(filename) || filename == "auto")
-            {
-                if (Target != null)
-                {
-                    var uri = new Uri(Target.Url);
-                    var lastPart = uri.AbsolutePath.Split('/').Last();
-                    var index = lastPart.LastIndexOf('?');
-                    if (index != -1)
-                        lastPart = lastPart.Substring(0, index);
-                    var dtStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-                    var candidate = $"{uri.Host}__{lastPart}_{dtStr}";
-
-                    path = Path.Combine(AppContext.BaseDirectory, $"{candidate}{ext}");
-                }
-            }
-            else
-            {
-                path = Path.Combine(AppContext.BaseDirectory, filename);
-            }
-
+            var path = GetScreenshotPath(filename, ext);
             if (string.IsNullOrWhiteSpace(path))
                 throw new Exception($"Invalid filename or path: '{filename}'");
 
@@ -862,14 +883,9 @@ namespace NoDriver.Core.Runtime
             if (!string.IsNullOrWhiteSpace(parentDir))
                 if (!Directory.Exists(parentDir))
                     Directory.CreateDirectory(parentDir);
-
-            var result = await SendAsync(Cdp.Page.CaptureScreenshot(format, CaptureBeyondViewport: fullPage), token: token);
-            var base64Data = result.Data;
-            if (string.IsNullOrWhiteSpace(base64Data))
-                throw new InvalidOperationException("Could not take screenshot. most possible cause is the page has not finished loading yet.");
-
-            var dataBytes = Convert.FromBase64String(base64Data);
-            await File.WriteAllBytesAsync(path, dataBytes, token);
+            
+            var bytes = await GetScreenshotDataAsync(format, fullPage, token);
+            await File.WriteAllBytesAsync(path, bytes, token);
             return path;
         }
 
@@ -909,6 +925,9 @@ namespace NoDriver.Core.Runtime
                             if (v.Contains("#")) 
                                 continue;
 
+                            if (v.StartsWith("javascript:"))
+                                continue;
+
                             var validStarts = new List<string> { "http", "//", "/" };
                             if (!validStarts.Any(it => v.Contains(it)))
                                 continue;
@@ -917,7 +936,8 @@ namespace NoDriver.Core.Runtime
                                 continue;
 
                             var baseUri = new Uri(Target.Url);
-                            var baseUrl = $"{baseUri.Scheme}://{baseUri.Host}";
+                            //var baseUrl = $"{baseUri.Scheme}://{baseUri.Host}";
+                            var baseUrl = baseUri.ToString();
 
                             if (Uri.TryCreate(new Uri(baseUrl), v, out var absUri))
                             {
@@ -1146,95 +1166,53 @@ namespace NoDriver.Core.Runtime
                 await body.SendKeysAsync("thisisunsafe", token);
         }
 
-        //ok 可優化
         public async Task<(int X, int Y)?> TemplateLocationAsync(string? templateImage = null, CancellationToken token = default)
         {
-            var screenPath = "screen.jpg";
-            var cfTemplatePath = "cf_template.png";
-            try
+            if (!string.IsNullOrWhiteSpace(templateImage))
             {
-                if (!string.IsNullOrWhiteSpace(templateImage))
-                {
-                    if (!File.Exists(templateImage))
-                        throw new FileNotFoundException($"{templateImage} was not found.");
-                }
-
-                await SaveScreenshotAsync(screenPath, token: token);
-                await WaitAsync(0.05, token);
-
-                using (var im = Cv2.ImRead(screenPath))
-                {
-                    using (var imGray = new Mat())
-                    {
-                        Cv2.CvtColor(im, imGray, ColorConversionCodes.BGR2GRAY);
-
-                        var template = null as Mat;
-                        if (!string.IsNullOrWhiteSpace(templateImage))
-                        {
-                            template = Cv2.ImRead(templateImage);
-                        }
-                        else
-                        {
-                            File.WriteAllBytes(cfTemplatePath, Util.GetCfTemplate());
-                            template = Cv2.ImRead(cfTemplatePath);
-                        }
-                        using (template)
-                        {
-                            using (var templateGray = new Mat())
-                            {
-                                Cv2.CvtColor(template, templateGray, ColorConversionCodes.BGR2GRAY);
-                                using (var match = new Mat())
-                                {
-                                    Cv2.MatchTemplate(imGray, templateGray, match, TemplateMatchModes.CCoeffNormed);
-                                    Cv2.MinMaxLoc(match, out var minV, out var maxV, out var minL, out var maxL);
-
-                                    var xs = maxL.X;
-                                    var ys = maxL.Y;
-
-                                    var tmpW = templateGray.Width;
-                                    var tmpH = templateGray.Height;
-
-                                    var xe = xs + tmpW;
-                                    var ye = ys + tmpH;
-
-                                    var cx = (xs + xe) / 2;
-                                    var cy = (ys + ye) / 2;
-
-                                    return (cx, cy);
-                                }
-                            }
-                        }
-                    }
-                }
+                if (!File.Exists(templateImage))
+                    throw new FileNotFoundException($"{templateImage} was not found.");
             }
-            finally
-            {
-                try
-                {
-                    if (File.Exists(screenPath))
-                        File.Delete(screenPath);
-                }
-                catch
-                {
-                    Console.WriteLine("Could not delete temporary screenshot.");
-                }
 
-                if (string.IsNullOrWhiteSpace(templateImage))
+            var screenBytes = await CaptureScreenshotAsync(token: token);
+            await WaitAsync(0.05, token);
+
+            var templateBytes = !string.IsNullOrWhiteSpace(templateImage) ?
+                await File.ReadAllBytesAsync(templateImage, token) :
+                Util.GetCfTemplate();
+
+            using (var im = Cv2.ImDecode(screenBytes, ImreadModes.Color))
+            using (var template = Cv2.ImDecode(templateBytes, ImreadModes.Color))
+            {
+                using (var imGray = new Mat())
+                using (var templateGray = new Mat())
                 {
-                    try
+                    Cv2.CvtColor(im, imGray, ColorConversionCodes.BGR2GRAY);
+                    Cv2.CvtColor(template, templateGray, ColorConversionCodes.BGR2GRAY);
+
+                    using (var match = new Mat())
                     {
-                        if (File.Exists(cfTemplatePath))
-                            File.Delete(cfTemplatePath);
-                    }
-                    catch
-                    {
-                        Console.WriteLine($"Could not unlink template file {cfTemplatePath}.");
+                        Cv2.MatchTemplate(imGray, templateGray, match, TemplateMatchModes.CCoeffNormed);
+                        Cv2.MinMaxLoc(match, out var minV, out var maxV, out var minL, out var maxL);
+
+                        var xs = maxL.X;
+                        var ys = maxL.Y;
+
+                        var tmpW = templateGray.Width;
+                        var tmpH = templateGray.Height;
+
+                        var xe = xs + tmpW;
+                        var ye = ys + tmpH;
+
+                        var cx = (xs + xe) / 2;
+                        var cy = (ys + ye) / 2;
+
+                        return (cx, cy);
                     }
                 }
             }
         }
 
-        //ok 要測試
         public async Task VerifyCfAsync(string? templateImage = null, bool flash = false, CancellationToken token = default)
         {
             if (Browser?.Config?.Expert == true)

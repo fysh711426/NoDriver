@@ -22,7 +22,7 @@ namespace Test
         {
             var config = new Config
             {
-                //Headless = true,
+                Headless = true,
                 AutodiscoverTargets = false
             };
             _browser = await Browser.CreateAsync(config);
@@ -475,7 +475,7 @@ namespace Test
             Assert.IsTrue(rawUrls.Contains("//cdn.com/lib.js"), "應包含 // 開頭的網址");
             Assert.IsTrue(rawUrls.Contains("../parent-path/style.css"), "應包含 ../ 開頭的網址");
             Assert.IsTrue(rawUrls.Contains("relative-file.html"), "應包含無 / 開頭的相對網址");
-            Assert.IsTrue(rawUrls.Contains("http://example.com/page#anchor"), "應包含帶有 # 的網址");
+            Assert.IsTrue(rawUrls.Contains("https://www.google.com.tw/index.html#anchor"), "應包含帶有 # 的網址");
             Assert.IsTrue(rawUrls.Contains("javascript:void(0)"), "應包含以 javascript: 開頭的行內腳本網址");
         }
 
@@ -490,10 +490,10 @@ namespace Test
 
             // Assert: 根據您目前 GetAllUrlsAsync 的程式碼邏輯進行驗證
             Assert.IsTrue(absUrls.Contains("https://absolute.com/file.js"), "完整的 HTTP 網址應正確保留");
-            Assert.IsTrue(absUrls.Contains("https://example.com/root-path/img.png"), "以 / 開頭的網址應被正確加上 Scheme 與 Host");
+            Assert.IsTrue(absUrls.Contains("https://nowsecure.nl/root-path/img.png"), "以 / 開頭的網址應被正確加上 Scheme 與 Host");
             Assert.IsTrue(absUrls.Contains("https://cdn.com/lib.js"), "以 // 開頭的網址應被補上 Scheme");
-            Assert.IsTrue(absUrls.Contains("https://example.com/parent-path/style.css"), "以 ../ 開頭的網址應正確被 Uri 類別解析合併");
-            Assert.IsTrue(absUrls.Contains("https://example.com/sub-folder/page.html"), "中間帶有 / 的相對路徑應正確被 Uri 類別解析合併");
+            Assert.IsTrue(absUrls.Contains("https://nowsecure.nl/test/parent-path/style.css"), "以 ../ 開頭的網址應正確被 Uri 類別解析合併");
+            Assert.IsTrue(absUrls.Contains("https://nowsecure.nl/test/sub/sub-folder/page.html"), "中間帶有 / 的相對路徑應正確被 Uri 類別解析合併");
 
             Assert.IsFalse(absUrls.Any(it => it.Contains("relative-file.html")), "因程式碼的 validStarts 過濾邏輯，無 / 且無 http 的網址應被忽略");
             Assert.IsFalse(absUrls.Any(it => it.Contains("#anchor")), "因程式碼的 Contains('#') 邏輯，帶有錨點的網址應被忽略");
