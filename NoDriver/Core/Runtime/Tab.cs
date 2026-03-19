@@ -131,41 +131,6 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public async Task<Element?> FindAsync(string text, bool bestMatch = true, bool returnEnclosingElement = true, double timeout = 10, CancellationToken token = default)
-        {
-            var sw = Stopwatch.StartNew();
-            text = text.Trim();
-
-            var item = await FindElementByTextAsync(text, bestMatch, returnEnclosingElement, token: token);
-            while (item == null)
-            {
-                await WaitAsync(token: token);
-                item = await FindElementByTextAsync(text, bestMatch, returnEnclosingElement, token: token);
-                if (sw.Elapsed.TotalSeconds > timeout)
-                    return item;
-                await WaitAsync(0.5, token: token);
-            }
-            return item;
-        }
-
-        public async Task<Element?> SelectAsync(string selector, double timeout = 10, CancellationToken token = default)
-        {
-            var sw = Stopwatch.StartNew();
-            selector = selector.Trim();
-
-            var item = await QuerySelectorAsync(selector, token: token);
-            while (item == null)
-            {
-                await WaitAsync(token: token);
-                item = await QuerySelectorAsync(selector, token: token);
-                if (sw.Elapsed.TotalSeconds > timeout)
-                    return item;
-                await WaitAsync(0.5, token: token);
-            }
-            return item;
-        }
-
-        // ok 要測試
         public async Task<List<Element>> FindAllAsync(string text, double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -181,6 +146,23 @@ namespace NoDriver.Core.Runtime
                 await WaitAsync(0.5, token);
             }
             return items;
+        }
+
+        public async Task<Element?> FindAsync(string text, bool bestMatch = true, bool returnEnclosingElement = true, double timeout = 10, CancellationToken token = default)
+        {
+            var sw = Stopwatch.StartNew();
+            text = text.Trim();
+
+            var item = await FindElementByTextAsync(text, bestMatch, returnEnclosingElement, token: token);
+            while (item == null)
+            {
+                await WaitAsync(token: token);
+                item = await FindElementByTextAsync(text, bestMatch, returnEnclosingElement, token: token);
+                if (sw.Elapsed.TotalSeconds > timeout)
+                    return item;
+                await WaitAsync(0.5, token: token);
+            }
+            return item;
         }
 
         public async Task<List<Element>> SelectAllAsync(string selector, double timeout = 10, bool includeFrames = false, CancellationToken token = default)
@@ -208,6 +190,23 @@ namespace NoDriver.Core.Runtime
                 await WaitAsync(0.5, token);
             }
             return items;
+        }
+
+        public async Task<Element?> SelectAsync(string selector, double timeout = 10, CancellationToken token = default)
+        {
+            var sw = Stopwatch.StartNew();
+            selector = selector.Trim();
+
+            var item = await QuerySelectorAsync(selector, token: token);
+            while (item == null)
+            {
+                await WaitAsync(token: token);
+                item = await QuerySelectorAsync(selector, token: token);
+                if (sw.Elapsed.TotalSeconds > timeout)
+                    return item;
+                await WaitAsync(0.5, token: token);
+            }
+            return item;
         }
 
         public async Task<List<Element>> XPathAsync(string xpath, double timeout = 2.5, CancellationToken token = default)
@@ -240,13 +239,11 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        //ok
         public async Task<List<Element>> QuerySelectorAllAsync(string selector, Element? node = null, CancellationToken token = default)
         {
             return await QuerySelectorAllAsync(selector, node, false, token);
         }
 
-        // ok 要測試
         private async Task<List<Element>> QuerySelectorAllAsync(string selector, Element? node, bool isRetry = false, CancellationToken token = default)
         {
             selector = selector.Trim();
@@ -306,13 +303,11 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        //ok
         public async Task<Element?> QuerySelectorAsync(string selector, Element? node = null, CancellationToken token = default)
         {
             return await QuerySelectorAsync(selector, node, false, token);
         }
 
-        // ok 要測試
         private async Task<Element?> QuerySelectorAsync(string selector, Element? node, bool isRetry = false, CancellationToken token = default)
         {
             selector = selector.Trim();
@@ -368,7 +363,6 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
-        // ok 要測試
         public async Task<List<Element>> FindElementsByTextAsync(string text, string? tagHint = null, CancellationToken token = default)
         {
             text = text.Trim();
@@ -436,7 +430,6 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
-        // ok 要測試
         public async Task<Element?> FindElementByTextAsync(string text, bool bestMatch = false, bool returnEnclosingElement = true, CancellationToken token = default)
         {
             var items = await FindElementsByTextAsync(text, token: token);
@@ -477,7 +470,6 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
-        //ok
         public async Task<Cdp.DOM.Node?> ResolveNodeAsync(Cdp.DOM.NodeId nodeId, CancellationToken token = default)
         {
             var result = await SendAsync(Cdp.DOM.ResolveNode(NodeId: nodeId), token: token);
@@ -649,20 +641,10 @@ namespace NoDriver.Core.Runtime
             return (result.Result, result.ExceptionDetails);
         }
         
-        //ok
         public async Task CloseAsync(CancellationToken token = default)
         {
             if (Target?.TargetId != null)
                 await SendAsync(Cdp.Target.CloseTarget(Target.TargetId), token: token);
-        }
-
-        //ok
-        public async Task<(Cdp.Browser.WindowID windowId, Cdp.Browser.Bounds bounds)?> GetWindowAsync(CancellationToken token = default)
-        {
-            if (Target?.TargetId == null)
-                return null;
-            var result = await SendAsync(Cdp.Browser.GetWindowForTarget(Target.TargetId), token: token);
-            return (result.WindowId, result.Bounds);
         }
 
         public async Task<string> GetContentAsync(CancellationToken token = default)
@@ -671,6 +653,14 @@ namespace NoDriver.Core.Runtime
             var doc = docResult.Root;
             var result = await SendAsync(Cdp.DOM.GetOuterHTML(BackendNodeId: doc.BackendNodeId), token: token);
             return result.OuterHTML;
+        }
+
+        public async Task<(Cdp.Browser.WindowID WindowId, Cdp.Browser.Bounds Bounds)?> GetWindowAsync(CancellationToken token = default)
+        {
+            if (Target?.TargetId == null)
+                return null;
+            var result = await SendAsync(Cdp.Browser.GetWindowForTarget(Target.TargetId), token: token);
+            return (result.WindowId, result.Bounds);
         }
 
         public async Task MaximizeAsync(CancellationToken token = default)
@@ -726,14 +716,12 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        //ok
         public async Task ActivateAsync(CancellationToken token = default)
         {
             if (Target?.TargetId != null)
                 await SendAsync(Cdp.Target.ActivateTarget(Target.TargetId), token: token);
         }
 
-        //ok
         public async Task BringToFrontAsync(CancellationToken token = default)
         {
             await ActivateAsync(token);
@@ -761,6 +749,13 @@ namespace NoDriver.Core.Runtime
             await ScrollUpAsync(-amount, token);
         }
 
+        public async Task<bool> ScrollBottomReachedAsync(CancellationToken token = default)
+        {
+            var (remoteObj, exception) = await EvaluateAsync(
+                "document.body.offsetHeight - window.innerHeight <= window.scrollY", token: token);
+            return remoteObj?.Value?.GetValue<bool>() ?? false;
+        }
+
         public async Task SetDownloadPathAsync(string path, CancellationToken token = default)
         {
             if (!Directory.Exists(path))
@@ -769,7 +764,6 @@ namespace NoDriver.Core.Runtime
             _downloadBehavior = new List<string> { "allow", path };
         }
 
-        //ok 要檢查下載是不是正確
         public async Task DownloadFileAsync(string url, string? filename = null, CancellationToken token = default)
         {
             if (_downloadBehavior == null || _downloadBehavior.Count == 0)
@@ -879,7 +873,6 @@ namespace NoDriver.Core.Runtime
             return path;
         }
 
-        //ok 要測試
         public async Task<List<Element>> GetAllLinkedSourcesAsync(CancellationToken token = default)
         {
             var allAssets = await QuerySelectorAllAsync("a,link,img,script,meta", token: token);
@@ -941,7 +934,6 @@ namespace NoDriver.Core.Runtime
             return res.ToList();
         }
 
-        //ok 要檢查 json 有沒有轉換成功
         public async Task<Dictionary<string, string>> GetLocalStorageAsync(CancellationToken token = default)
         {
             if (string.IsNullOrWhiteSpace(Target?.Url))
@@ -964,7 +956,6 @@ namespace NoDriver.Core.Runtime
             return retval;
         }
 
-        //ok 要測試
         public async Task SetLocalStorageAsync(Dictionary<string, string> items, CancellationToken token = default)
         {
             if (string.IsNullOrWhiteSpace(Target?.Url))
@@ -983,21 +974,18 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        //ok 要測試
         public async Task<Cdp.Page.FrameTree> GetFrameTreeAsync(CancellationToken token = default)
         {
             var result = await SendAsync(Cdp.Page.GetFrameTree(), token: token);
             return result.FrameTree;
         }
 
-        //ok 要測試
         public async Task<Cdp.Page.FrameResourceTree> GetFrameResourceTreeAsync(CancellationToken token = default)
         {
             var result = await SendAsync(Cdp.Page.GetResourceTree(), token: token);
             return result.FrameTree;
         }
 
-        //ok 要測試
         public async Task<List<string>> GetFrameResourceUrlsAsync(CancellationToken token = default)
         {
             var tree = await GetFrameResourceTreeAsync(token);
@@ -1010,7 +998,6 @@ namespace NoDriver.Core.Runtime
                 .ToList();
         }
 
-        //ok 要測試
         public async Task<Dictionary<string, List<Cdp.Debugger.SearchMatch>>> SearchFrameResourcesAsync(string query, CancellationToken token = default)
         {
             try
@@ -1043,22 +1030,123 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        //ok 要測試
-        public async Task VerifyCfAsync(string? templateImage = null, bool flash = false, CancellationToken token = default)
+        public async Task MouseMoveAsync(double x, double y, int steps = 10, bool flash = false, CancellationToken token = default)
         {
-            if (Browser?.Config?.Expert == true)
-                throw new Exception("This function is useless in expert mode...");
-
-            var loc = await TemplateLocationAsync(templateImage, token);
-            if (loc != null)
+            steps = steps < 1 ? 1 : steps;
+            if (steps > 1)
             {
-                await MouseClickAsync(loc.Value.X, loc.Value.Y, token: token);
-                if (flash)
-                    await FlashPointAsync(loc.Value.X, loc.Value.Y, token: token);
+                var stepSizeX = Math.Floor(x / steps);
+                var stepSizeY = Math.Floor(y / steps);
+                for (var i = 0; i <= steps; i++)
+                {
+                    var currentX = stepSizeX * i;
+                    var currentY = stepSizeY * i;
+                    if (flash) 
+                        await FlashPointAsync(currentX, currentY, token: token);
+                    await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: currentX, Y: currentY), token: token);
+                }
             }
+            else
+            {
+                await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: x, Y: y), token: token);
+            }
+
+            if (flash) 
+                await FlashPointAsync(x, y, token: token);
+            else 
+                await WaitAsync(0.05, token: token);
+
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", X: x, Y: y), token: token);
+            if (flash) 
+                await FlashPointAsync(x, y, token: token);
         }
 
-        //ok 要測試
+        public async Task MouseClickAsync(double x, double y, string button = "left", int buttons = 1, int modifiers = 0, CancellationToken token = default)
+        {
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed", x, y,
+                Modifiers: modifiers, Button: new Cdp.Input.MouseButton(button), Buttons: buttons, ClickCount: 1), token: token);
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", x, y,
+                Modifiers: modifiers, Button: new Cdp.Input.MouseButton(button), Buttons: buttons, ClickCount: 1), token: token);
+        }
+
+        public async Task MouseDragAsync((double X, double Y) sourcePoint, (double X, double Y) destPoint, bool relative = false, int steps = 1, CancellationToken token = default)
+        {
+            if (relative)
+                destPoint = (sourcePoint.X + destPoint.X, sourcePoint.Y + destPoint.Y);
+
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed",
+                X: sourcePoint.X, Y: sourcePoint.Y, Button: new Cdp.Input.MouseButton("left")), token: token);
+
+            steps = Math.Max(1, steps);
+            if (steps == 1)
+            {
+                await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: destPoint.X, Y: destPoint.Y), token: token);
+            }
+            else
+            {
+                var stepSizeX = (destPoint.X - sourcePoint.X) / steps;
+                var stepSizeY = (destPoint.Y - sourcePoint.Y) / steps;
+                for (var i = 0; i < steps + 1; i++)
+                {
+                    await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved",
+                        X: sourcePoint.X + stepSizeX * i, Y: sourcePoint.Y + stepSizeY * i), token: token);
+                    await Task.Yield();
+                }
+            }
+            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased",
+                X: destPoint.X, Y: destPoint.Y, Button: new Cdp.Input.MouseButton("left")), token: token);
+        }
+
+        public async Task FlashPointAsync(double x, double y, double duration = 0.5, int size = 10, CancellationToken token = default)
+        {
+            var id = Guid.NewGuid().ToString("N").Substring(0, 16);
+            var style =
+                $$"""
+                    position:absolute;z-index:99999999;padding:0;margin:0;
+                    left:{{x - 8}}px;top:{{y - 8}}px;
+                    opacity:1;
+                    width:{{size}}px;height:{{size}}px;border-radius:50%;background:red;
+                    animation:show-pointer-ani {{duration}}s ease 1;
+                """;
+            var script =
+                $$"""
+                    var css = document.styleSheets[0];
+                    for( let css of [...document.styleSheets]) {
+                        try {
+                            css.insertRule(`
+                            @keyframes show-pointer-ani {
+                                  0% { opacity: 1; transform: scale(1, 1);}
+                                  50% { transform: scale(3, 3);}
+                                  100% { transform: scale(1, 1); opacity: 0;}
+                            }`,css.cssRules.length);
+                            break;
+                        } catch (e) {
+                            console.log(e)
+                        }
+                    };
+                    var _d = document.createElement('div');
+                    _d.style = `{{style}}`;
+                    _d.id = `{{id}}`;
+                    document.body.insertAdjacentElement('afterBegin', _d);
+    
+                    setTimeout( () => document.getElementById('{{id}}').remove(), {{Math.Floor(duration * 1000)}});
+                """;
+
+            script = script
+                .Replace("  ", "")
+                .Replace("\n", "");
+
+            await SendAsync(Cdp.Runtime.Evaluate(script, AwaitPromise: true, UserGesture: true), token: token);
+        }
+
+        public async Task BypassInsecureConnectionWarningAsync(CancellationToken token = default)
+        {
+            var body = await SelectAsync("body", token: token);
+            if (body != null)
+                await body.SendKeysAsync("thisisunsafe", token);
+        }
+
+        //ok 可優化
         public async Task<(int X, int Y)?> TemplateLocationAsync(string? templateImage = null, CancellationToken token = default)
         {
             var screenPath = "screen.jpg";
@@ -1147,129 +1235,18 @@ namespace NoDriver.Core.Runtime
         }
 
         //ok 要測試
-        public async Task BypassInsecureConnectionWarningAsync(CancellationToken token = default)
+        public async Task VerifyCfAsync(string? templateImage = null, bool flash = false, CancellationToken token = default)
         {
-            var body = await SelectAsync("body", token: token);
-            if (body != null)
-                await body.SendKeysAsync("thisisunsafe", token);
-        }
+            if (Browser?.Config?.Expert == true)
+                throw new Exception("This function is useless in expert mode...");
 
-        public async Task<bool> ScrollBottomReachedAsync(CancellationToken token = default)
-        {
-            var (remoteObj, exception) = await EvaluateAsync(
-                "document.body.offsetHeight - window.innerHeight <= window.scrollY", token: token);
-            return remoteObj?.Value?.GetValue<bool>() ?? false;
-        }
-
-        public async Task MouseMoveAsync(double x, double y, int steps = 10, bool flash = false, CancellationToken token = default)
-        {
-            steps = steps < 1 ? 1 : steps;
-            if (steps > 1)
+            var loc = await TemplateLocationAsync(templateImage, token);
+            if (loc != null)
             {
-                var stepSizeX = Math.Floor(x / steps);
-                var stepSizeY = Math.Floor(y / steps);
-                for (var i = 0; i <= steps; i++)
-                {
-                    var currentX = stepSizeX * i;
-                    var currentY = stepSizeY * i;
-                    if (flash) 
-                        await FlashPointAsync(currentX, currentY, token: token);
-                    await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: currentX, Y: currentY), token: token);
-                }
+                await MouseClickAsync(loc.Value.X, loc.Value.Y, token: token);
+                if (flash)
+                    await FlashPointAsync(loc.Value.X, loc.Value.Y, token: token);
             }
-            else
-            {
-                await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: x, Y: y), token: token);
-            }
-
-            if (flash) 
-                await FlashPointAsync(x, y, token: token);
-            else 
-                await WaitAsync(0.05, token: token);
-
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", X: x, Y: y), token: token);
-            if (flash) 
-                await FlashPointAsync(x, y, token: token);
-        }
-
-        public async Task MouseClickAsync(double x, double y, string button = "left", int buttons = 1, int modifiers = 0, CancellationToken token = default)
-        {
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed", x, y,
-                Modifiers: modifiers, Button: new Cdp.Input.MouseButton(button), Buttons: buttons, ClickCount: 1), token: token);
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", x, y,
-                Modifiers: modifiers, Button: new Cdp.Input.MouseButton(button), Buttons: buttons, ClickCount: 1), token: token);
-        }
-
-        //ok
-        public async Task MouseDragAsync((double X, double Y) sourcePoint, (double X, double Y) destPoint, bool relative = false, int steps = 1, CancellationToken token = default)
-        {
-            if (relative)
-                destPoint = (sourcePoint.X + destPoint.X, sourcePoint.Y + destPoint.Y);
-
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed",
-                X: sourcePoint.X, Y: sourcePoint.Y, Button: new Cdp.Input.MouseButton("left")), token: token);
-
-            steps = steps < 1 ? 1 : steps;
-            if (steps == 1)
-            {
-                await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: destPoint.X, Y: destPoint.Y), token: token);
-            }
-            else
-            {
-                var stepSizeX = (destPoint.X - sourcePoint.X) / steps;
-                var stepSizeY = (destPoint.Y - sourcePoint.Y) / steps;
-                for (var i = 0; i < steps + 1; i++)
-                {
-                    await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved",
-                        X: sourcePoint.X + stepSizeX * i, Y: sourcePoint.Y + stepSizeY * i), token: token);
-                    await Task.Yield();
-                }
-            }
-            await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased",
-                X: destPoint.X, Y: destPoint.Y, Button: new Cdp.Input.MouseButton("left")), token: token);
-        }
-
-        //ok
-        public async Task FlashPointAsync(double x, double y, double duration = 0.5, int size = 10, CancellationToken token = default)
-        {
-            var id = Guid.NewGuid().ToString("N").Substring(0, 16);
-            var style =
-                $$"""
-                    position:absolute;z-index:99999999;padding:0;margin:0;
-                    left:{{x - 8}}px;top:{{y - 8}}px;
-                    opacity:1;
-                    width:{{size}}px;height:{{size}}px;border-radius:50%;background:red;
-                    animation:show-pointer-ani {{duration}}s ease 1;
-                """;
-            var script =
-                $$"""
-                    var css = document.styleSheets[0];
-                    for( let css of [...document.styleSheets]) {
-                        try {
-                            css.insertRule(`
-                            @keyframes show-pointer-ani {
-                                  0% { opacity: 1; transform: scale(1, 1);}
-                                  50% { transform: scale(3, 3);}
-                                  100% { transform: scale(1, 1); opacity: 0;}
-                            }`,css.cssRules.length);
-                            break;
-                        } catch (e) {
-                            console.log(e)
-                        }
-                    };
-                    var _d = document.createElement('div');
-                    _d.style = `{{style}}`;
-                    _d.id = `{{id}}`;
-                    document.body.insertAdjacentElement('afterBegin', _d);
-    
-                    setTimeout( () => document.getElementById('{{id}}').remove(), {{Math.Floor(duration * 1000)}});
-                """;
-
-            script = script
-                .Replace("  ", "")
-                .Replace("\n", "");
-
-            await SendAsync(Cdp.Runtime.Evaluate(script, AwaitPromise: true, UserGesture: true), token: token);
         }
 
         public bool Equals(Tab? other)
