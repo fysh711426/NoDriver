@@ -41,6 +41,17 @@ namespace Test
         }
 
         [TestMethod]
+        public async Task StartAsync_WhenAlreadyRunning_ShouldReturnSameInstance()
+        {
+            // Act: 嘗試再次呼叫 StartAsync
+            var browser = await _browser!.StartAsync();
+
+            // Assert
+            Assert.AreSame(_browser, browser, "當瀏覽器已在運行時，再次啟動應該回傳同一個實例");
+            Assert.IsFalse(_browser.Stopped, "瀏覽器不應該因此停止");
+        }
+
+        [TestMethod]
         public async Task GetAsync_NavigateCurrentTab_ShouldReturnTab()
         {
             // Act
@@ -68,17 +79,6 @@ namespace Test
         }
 
         [TestMethod]
-        public async Task CreateContextAsync_ShouldCreateIsolatedContext()
-        {
-            // Act
-            var newTab = await _browser!.CreateContextAsync(exampleUrl, newWindow: true);
-
-            // Assert
-            Assert.IsNotNull(newTab);
-            Assert.IsTrue(_browser.Tabs.Contains(newTab), "新建立的 Tab 應該存在於瀏覽器的 Tabs 列表中");
-        }
-
-        [TestMethod]
         public async Task WaitAsync_ShouldDelayExecution()
         {
             // Act
@@ -91,11 +91,43 @@ namespace Test
             Assert.IsTrue(elapsed >= 0.4, "執行時間應大約等於或超過 0.5 秒");
         }
 
+        [TestMethod]
+        public async Task CreateContextAsync_ShouldCreateIsolatedContext()
+        {
+            // Act
+            var newTab = await _browser!.CreateContextAsync(exampleUrl, newWindow: true);
+
+            // Assert
+            Assert.IsNotNull(newTab);
+            Assert.IsTrue(_browser.Tabs.Contains(newTab), "新建立的 Tab 應該存在於瀏覽器的 Tabs 列表中");
+        }
+
+        [TestMethod]
+        public async Task CreateContextAsync_WithProxy_ShouldExecuteWithoutError()
+        {
+            // Arrange
+            // 隨便給定一個本機假 Proxy，重點是觸發內部 ProxyForwarder 的建立邏輯
+            var fakeProxy = "socks5://127.0.0.1:9999";
+
+            // Act
+            var newTab = await _browser!.CreateContextAsync(
+                url: "chrome://version",
+                newWindow: true,
+                proxyServer: fakeProxy);
+
+            // Assert
+            Assert.IsNotNull(newTab, "即使帶有 Proxy 參數，也應成功建立新的 Context 與 Tab");
+            Assert.IsTrue(_browser.Tabs.Contains(newTab), "新 Tab 應被加入列表中");
+
+            // Cleanup
+            await newTab.CloseAsync();
+        }
+
         //[TestMethod]
         //public async Task GrantAllPermissionsAsync_ShouldExecuteWithoutError()
         //{
         //    // Act & Assert
-        //    // 在 MSTest 中，如果非同步方法沒有拋出例外，就代表測試通過
+        //    // 只要 CDP 沒拋出例外即算通過。此方法會略過已過時的權限
         //    await _browser!.GrantAllPermissionsAsync();
         //}
 
@@ -139,6 +171,25 @@ namespace Test
         }
 
         [TestMethod]
+        public async Task TargetLifecycle_CloseTab_ShouldTriggerTargetDestroyedAndRemoveFromList()
+        {
+            // Arrange
+            var newTab = await _browser!.GetAsync("chrome://version", newTab: true);
+            var count = _browser.Targets.Count;
+
+            // Act
+            await newTab.CloseAsync();
+            // 等待 Chrome 發出 TargetDestroyed 事件並讓 Browser 內部處理
+            //await _browser.WaitAsync(1.0);
+            await Task.Delay(1000);
+
+            // Assert
+            var finalCount = _browser.Targets.Count;
+            Assert.IsTrue(finalCount < count, "關閉分頁後，Targets 列表的數量應該減少");
+            Assert.IsFalse(_browser.Tabs.Contains(newTab), "被關閉的分頁不應再存在於 Tabs 列表中");
+        }
+
+        [TestMethod]
         public async Task Indexer_ByIndex_ShouldReturnCorrectTab()
         {
             // Arrange
@@ -171,10 +222,29 @@ namespace Test
         }
 
         [TestMethod]
+        public void Indexer_ByStringQuery_NotFound_ShouldReturnFirstTab()
+        {
+            // Arrange
+            var firstTab = _browser!.Tabs.First();
+
+            // Act
+            // 故意搜尋一個絕對不存在於 TargetInfo 裡的奇怪字串
+            var fallbackTab = _browser["this_definitely_does_not_exist_12345"];
+
+            // Assert
+            Assert.IsNotNull(fallbackTab);
+            Assert.AreSame(firstTab, fallbackTab, "當找不到符合的字串時，依照邏輯應該回傳第一個 Tab");
+        }
+
+        [TestMethod]
         public async Task DisposeAsync_ShouldKillProcessAndClearTargets()
         {
             // Arrange
-            var config = new Config { Headless = true };
+            var config = new Config
+            {
+                Headless = true,
+                AutodiscoverTargets = true
+            };
             var browserToDispose = await Browser.CreateAsync(config);
 
             // Act
@@ -189,7 +259,11 @@ namespace Test
         public async Task Dispose_ShouldKillProcessAndClearTargets()
         {
             // Arrange
-            var config = new Config { Headless = true };
+            var config = new Config
+            {
+                Headless = true,
+                AutodiscoverTargets = true
+            };
             var browserToDispose = await Browser.CreateAsync(config);
 
             // Act

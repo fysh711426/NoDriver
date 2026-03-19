@@ -60,6 +60,17 @@ namespace Test
         }
 
         [TestMethod]
+        public async Task DisconnectAsync_WhenCalledMultipleTimes_ShouldNotThrowException()
+        {
+            // Arrange
+            await _connection!.ConnectAsync();
+            await _connection.DisconnectAsync();
+
+            // Act & Assert: 多次呼叫不應拋出例外
+            await _connection.DisconnectAsync();
+        }
+
+        [TestMethod]
         public void AddHandler_AsyncDelegate_ShouldRegisterInHandlersDictionary()
         {
             // Arrange
@@ -122,6 +133,46 @@ namespace Test
         }
 
         [TestMethod]
+        public async Task RegisterHandlersAsync_ShouldEnableDomainAutomatically_WhenSendAsyncIsCalled()
+        {
+            // Arrange
+            await _connection!.ConnectAsync();
+
+            // 加入一個非預設 Domain 的 Handler (例如 Log Domain)
+            _connection.AddHandler<Cdp.Log.EntryAdded>((e, _) => { });
+
+            Assert.IsFalse(_connection.EnabledDomains.ContainsKey("Log"), "此時尚未發送任何指令，EnabledDomains 不應包含 Log");
+
+            // Act: 呼叫 SendAsync，這會連帶觸發內部的 RegisterHandlersAsync
+            await _connection.SendAsync(Cdp.Target.GetTargets());
+
+            // Assert
+            Assert.IsTrue(_connection.EnabledDomains.ContainsKey("Log"), "在發送指令之後，應自動向瀏覽器註冊並啟用 Handler 對應的 Domain");
+        }
+
+        [TestMethod]
+        public async Task RegisterHandlersAsync_ShouldEnableDomainAutomatically_WhenSendAsyncIsCalled2()
+        {
+            // Arrange
+            await _connection!.ConnectAsync();
+            await _browser!.MainTab!.ConnectAsync();
+
+            // 加入一個非預設 Domain 的 Handler (例如 Page Domain)
+            _connection.AddHandler<Cdp.Network.ResponseReceived>((e, _) => { });
+            _browser.MainTab.AddHandler<Cdp.Page.LoadEventFired>((e, _) => { });
+
+            Assert.IsFalse(_connection.EnabledDomains.ContainsKey("Network"), "此時尚未發送任何指令，EnabledDomains 不應包含 Network");
+            Assert.IsFalse(_browser.MainTab.EnabledDomains.ContainsKey("Page"), "此時尚未發送任何指令，EnabledDomains 不應包含 Page");
+
+            // Act: 呼叫 SendAsync，這會連帶觸發內部的 RegisterHandlersAsync
+            await _connection.SendAsync(Cdp.Target.GetTargets());
+            await _browser.MainTab.SendAsync(Cdp.Target.GetTargets());
+
+            // Assert
+            Assert.IsTrue(_connection.EnabledDomains.ContainsKey("Page"), "在發送指令之後，應自動向瀏覽器註冊並啟用 Handler 對應的 Domain");
+        }
+
+        [TestMethod]
         public async Task SendAsync_ShouldExecuteCommandAndReturnResponse()
         {
             // Arrange
@@ -134,6 +185,47 @@ namespace Test
             Assert.IsNotNull(response, "傳送指令後應收到有效回覆");
             Assert.IsNotNull(response.TargetInfos, "TargetInfos 屬性不應為 null");
             Assert.IsTrue(response.TargetInfos.Count > 0, "瀏覽器啟動時應該至少有一個預設 Target");
+        }
+
+        [TestMethod]
+        public async Task SendAsync_WhenClosed_ShouldAutoConnectAndSend()
+        {
+            // Arrange: 確保目前是未連線狀態
+            Assert.IsTrue(_connection!.Closed, "初始狀態應該是 Closed");
+
+            // Act
+            var response = await _connection.SendAsync(Cdp.Browser.GetVersion());
+
+            // Assert
+            Assert.IsFalse(_connection.Closed, "應該會自動觸發 ConnectAsync 並改變狀態");
+            Assert.IsNotNull(response, "自動連線後應能成功取得 CDP 回覆");
+        }
+
+        [TestMethod]
+        public async Task ProcessMessage_ShouldTriggerEventHandler_WhenRealEventIsReceived()
+        {
+            // Arrange
+            await _connection!.ConnectAsync();
+            var tcs = new TaskCompletionSource<bool>();
+
+            // 監聽 TargetCreated 事件 (當新開分頁時瀏覽器會發送此事件)
+            _connection.AddHandler<Cdp.Target.TargetCreated>((e, _) =>
+            {
+                tcs.TrySetResult(true);
+            });
+
+            // Act: 主動發送一個創建新 Target 的指令來迫使瀏覽器拋出 TargetCreated 事件
+            var createResult = await _connection.SendAsync(Cdp.Target.CreateTarget("about:blank"));
+
+            // 等待事件被觸發，設定最多等 3 秒以防死鎖
+            var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(3000));
+
+            // Assert
+            Assert.AreEqual(tcs.Task, completedTask, "當瀏覽器底層發出事件時，ProcessMessage 應正確解析並執行對應的 Handler");
+
+            // Cleanup: 關閉剛剛建立的 target
+            if (createResult?.TargetId != null)
+                await _connection.SendAsync(Cdp.Target.CloseTarget(createResult.TargetId));
         }
 
         [TestMethod]

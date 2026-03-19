@@ -98,203 +98,6 @@ namespace NoDriver.Core.Runtime
         }
 
         /// <summary>
-        /// Wait for time seconds. important to use, especially in between page navigation.
-        /// </summary>
-        /// <param name="time"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        public async Task WaitAsync(double time = 0.1, CancellationToken token = default)
-        {
-            await Task.WhenAll(
-                UpdateTargetsAsync(token),
-                Task.Delay(TimeSpan.FromSeconds(time), token));
-        }
-
-        /// <summary>
-        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
-        /// </summary>
-        /// <param name="infoChanged"></param>
-        /// <returns></returns>
-        private async Task HandleTargetInfoChanged(Cdp.Target.TargetInfoChanged infoChanged)
-        {
-            var targetInfo = infoChanged.TargetInfo;
-            var target = _targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
-            if (target != null)
-            {
-                //if (logger.IsEnabled(LogLevel.Debug))
-                //{
-                //    var sb = new StringBuilder();
-                //    var changes = Util.CompareTargetInfo(target.Target, targetInfo);
-                //    foreach (var change in changes)
-                //    {
-                //        sb.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
-                //    }
-                //    Console.WriteLine($"Target #{_targets.IndexOf(target)} has changed: {sb.ToString()}");
-                //}
-                target.Target = targetInfo;
-            }
-            await UpdateTargetsAsync();
-        }
-
-        /// <summary>
-        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
-        /// </summary>
-        /// <param name="created"></param>
-        /// <returns></returns>
-        private async Task HandleTargetCreated(Cdp.Target.TargetCreated created)
-        {
-            var targetInfo = created.TargetInfo;
-            if (Config?.Host != null && Config?.Port != null)
-            {
-                var newTarget = new Tab(
-                    $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId.Value}", targetInfo, this);
-                _targets.AddIfNotExist(
-                    it => it.Target?.TargetId == targetInfo.TargetId,
-                    () => newTarget);
-                Console.WriteLine($"Target #{_targets.Count - 1} created => {newTarget.ToString()}");
-            }
-            await UpdateTargetsAsync();
-        }
-
-        /// <summary>
-        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
-        /// </summary>
-        /// <param name="destroyed"></param>
-        /// <returns></returns>
-        private async Task HandleTargetDestroyed(Cdp.Target.TargetDestroyed destroyed)
-        {
-            var target = _targets.FirstOrDefault(it => it.Target?.TargetId == destroyed.TargetId);
-            if (target != null)
-            {
-                Console.WriteLine($"Target removed. id #{_targets.IndexOf(target)} => {target.ToString()}");
-                if (_targets.Remove(target))
-                {
-                    try { await target.DisposeAsync(); }
-                    catch { }
-                }
-            }
-            await UpdateTargetsAsync();
-        }
-
-        /// <summary>
-        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
-        /// </summary>
-        /// <param name="crashed"></param>
-        /// <returns></returns>
-        private async Task HandleTargetCrashed(Cdp.Target.TargetCrashed crashed)
-        {
-            await UpdateTargetsAsync();
-        }
-
-        /// <summary>
-        /// Top level get. utilizes the first tab to retrieve given url.<br/>
-        /// convenience function known from selenium.<br/>
-        /// this function handles waits and detects when DOM events fired, so it's the safest
-        /// way of navigating.
-        /// </summary>
-        /// <param name="url">The url to navigate to.</param>
-        /// <param name="newTab">Open new tab.</param>
-        /// <param name="newWindow">Open new window.</param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException"></exception>
-        public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false, CancellationToken token = default)
-        {
-            if (Connection == null)
-                throw new InvalidOperationException("Connection cannot be null.");
-
-            if (newTab || newWindow)
-            {
-                var result = await Connection.SendAsync(
-                    Cdp.Target.CreateTarget(url, NewWindow: newWindow, EnableBeginFrameControl: true), token: token);
-                var targetId = result.TargetId;
-
-                await UpdateTargetsAsync(token);
-
-                var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == targetId);
-                if (connection == null)
-                    throw new InvalidOperationException("Targets connection cannot be null.");
-
-                connection.Browser = this;
-                return connection;
-            }
-            else
-            {
-                var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page");
-                if (connection == null)
-                    throw new InvalidOperationException("Targets connection cannot be null.");
-
-                var result = await connection.SendAsync(Cdp.Page.Navigate(url), token: token);
-                //connection.FrameId = result.FrameId;
-                connection.Browser = this;
-                await UpdateTargetsAsync(token);
-                return connection;
-            }
-        }
-
-        //ok 要測試
-        /// <summary>
-        /// Creates a new browser context - mostly useful if you want to use proxies for different browser instances<br/>
-        /// since chrome usually can only use 1 proxy per browser.<br/>
-        /// socks5 with authentication is supported by using a forwarder proxy, the<br/>
-        /// correct string to use socks proxy with username/password auth is socks://USERNAME:PASSWORD@SERVER:PORT<br/>
-        /// http/https proxies with authentication are also supported: http://USERNAME:PASSWORD@SERVER:PORT
-        /// </summary>
-        /// <param name="url"></param>
-        /// <param name="newTab"></param>
-        /// <param name="newWindow"></param>
-        /// <param name="disposeOnDetach">If specified, disposes this context when debugging session disconnects.</param>
-        /// <param name="proxyServer">Proxy server, similar to the one passed to –proxy-server.</param>
-        /// <param name="proxyBypassList">Proxy bypass list, similar to the one passed to –proxy-bypass-list.</param>
-        /// <param name="originsWithUniversalNetworkAccess">An optional list of origins to grant unlimited cross-origin access to. Parts of the URL other than those constituting origin are ignored.</param>
-        /// <param name="clientCertificates">Custom SSL context for HTTPS proxy connections. If None, a default context is used.</param>
-        /// <param name="remoteCertificateValidationCallback"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException"></exception>
-        public async Task<Tab> CreateContextAsync(
-            string url = "chrome://welcome",
-            bool newTab = false,
-            bool newWindow = true,
-            bool disposeOnDetach = true,
-            string? proxyServer = null,
-            List<string>? proxyBypassList = null,
-            List<string>? originsWithUniversalNetworkAccess = null,
-            X509Certificate2Collection? clientCertificates = null,
-            RemoteCertificateValidationCallback? remoteCertificateValidationCallback = null,
-            CancellationToken token = default)
-        {
-            if (Connection == null)
-                throw new InvalidOperationException("Connection cannot be null.");
-
-            if (!string.IsNullOrWhiteSpace(proxyServer))
-            {
-                var forwarder = new ProxyForwarder(proxyServer, 
-                    clientCertificates, remoteCertificateValidationCallback);
-                _proxyForwarders.Add(forwarder);
-                proxyServer = forwarder.ProxyServer;
-            }
-
-            var ctxResult = await Connection.SendAsync(Cdp.Target.CreateBrowserContext(
-                DisposeOnDetach: disposeOnDetach,
-                ProxyServer: proxyServer,
-                ProxyBypassList: proxyBypassList?.Count > 0 ?
-                    string.Join(';', proxyBypassList) : null,
-                OriginsWithUniversalNetworkAccess: originsWithUniversalNetworkAccess
-            ), token: token);
-
-            var result = await Connection.SendAsync(
-                Cdp.Target.CreateTarget(url, BrowserContextId: ctxResult.BrowserContextId, NewWindow: newWindow, ForTab: newTab), token: token);
-
-            await WaitAsync(0.5, token);
-
-            var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == result.TargetId);
-            if (connection == null)
-                throw new InvalidOperationException("Targets connection cannot be null.");
-            return connection;
-        }
-
-        /// <summary>
         /// Launches the actual browser.
         /// </summary>
         /// <param name="token"></param>
@@ -388,6 +191,203 @@ namespace NoDriver.Core.Runtime
             }
             await UpdateTargetsAsync(token);
             return this;
+        }
+
+        /// <summary>
+        /// Top level get. utilizes the first tab to retrieve given url.<br/>
+        /// convenience function known from selenium.<br/>
+        /// this function handles waits and detects when DOM events fired, so it's the safest
+        /// way of navigating.
+        /// </summary>
+        /// <param name="url">The url to navigate to.</param>
+        /// <param name="newTab">Open new tab.</param>
+        /// <param name="newWindow">Open new window.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        public async Task<Tab> GetAsync(string url = "chrome://welcome", bool newTab = false, bool newWindow = false, CancellationToken token = default)
+        {
+            if (Connection == null)
+                throw new InvalidOperationException("Connection cannot be null.");
+
+            if (newTab || newWindow)
+            {
+                var result = await Connection.SendAsync(
+                    Cdp.Target.CreateTarget(url, NewWindow: newWindow, EnableBeginFrameControl: true), token: token);
+                var targetId = result.TargetId;
+
+                await UpdateTargetsAsync(token);
+
+                var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == targetId);
+                if (connection == null)
+                    throw new InvalidOperationException("Targets connection cannot be null.");
+
+                connection.Browser = this;
+                return connection;
+            }
+            else
+            {
+                var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page");
+                if (connection == null)
+                    throw new InvalidOperationException("Targets connection cannot be null.");
+
+                var result = await connection.SendAsync(Cdp.Page.Navigate(url), token: token);
+                //connection.FrameId = result.FrameId;
+                connection.Browser = this;
+                await UpdateTargetsAsync(token);
+                return connection;
+            }
+        }
+
+        /// <summary>
+        /// Wait for time seconds. important to use, especially in between page navigation.
+        /// </summary>
+        /// <param name="time"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public async Task WaitAsync(double time = 0.1, CancellationToken token = default)
+        {
+            await Task.WhenAll(
+                UpdateTargetsAsync(token),
+                Task.Delay(TimeSpan.FromSeconds(time), token));
+        }
+
+        /// <summary>
+        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
+        /// </summary>
+        /// <param name="infoChanged"></param>
+        /// <returns></returns>
+        private async Task HandleTargetInfoChanged(Cdp.Target.TargetInfoChanged infoChanged)
+        {
+            var targetInfo = infoChanged.TargetInfo;
+            var target = _targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
+            if (target != null)
+            {
+                //if (logger.IsEnabled(LogLevel.Debug))
+                //{
+                //    var sb = new StringBuilder();
+                //    var changes = Util.CompareTargetInfo(target.Target, targetInfo);
+                //    foreach (var change in changes)
+                //    {
+                //        sb.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
+                //    }
+                //    Console.WriteLine($"Target #{_targets.IndexOf(target)} has changed: {sb.ToString()}");
+                //}
+                target.Target = targetInfo;
+            }
+            await UpdateTargetsAsync();
+        }
+
+        /// <summary>
+        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
+        /// </summary>
+        /// <param name="created"></param>
+        /// <returns></returns>
+        private async Task HandleTargetCreated(Cdp.Target.TargetCreated created)
+        {
+            var targetInfo = created.TargetInfo;
+            if (Config?.Host != null && Config?.Port != null)
+            {
+                var newTarget = new Tab(
+                    $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId.Value}", targetInfo, this);
+                _targets.AddIfNotExist(
+                    it => it.Target?.TargetId == targetInfo.TargetId,
+                    () => newTarget);
+                Console.WriteLine($"Target #{_targets.Count - 1} created => {newTarget.ToString()}");
+            }
+            await UpdateTargetsAsync();
+        }
+
+        /// <summary>
+        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
+        /// </summary>
+        /// <param name="destroyed"></param>
+        /// <returns></returns>
+        private async Task HandleTargetDestroyed(Cdp.Target.TargetDestroyed destroyed)
+        {
+            var target = _targets.FirstOrDefault(it => it.Target?.TargetId == destroyed.TargetId);
+            if (target != null)
+            {
+                Console.WriteLine($"Target removed. id #{_targets.IndexOf(target)} => {target.ToString()}");
+                if (_targets.Remove(target))
+                {
+                    try { await target.DisposeAsync(); }
+                    catch { }
+                }
+            }
+            await UpdateTargetsAsync();
+        }
+
+        /// <summary>
+        /// This is an internal handler which updates the targets when chrome emits the corresponding event.
+        /// </summary>
+        /// <param name="crashed"></param>
+        /// <returns></returns>
+        private async Task HandleTargetCrashed(Cdp.Target.TargetCrashed crashed)
+        {
+            await UpdateTargetsAsync();
+        }
+
+        //ok 要測試
+        /// <summary>
+        /// Creates a new browser context - mostly useful if you want to use proxies for different browser instances<br/>
+        /// since chrome usually can only use 1 proxy per browser.<br/>
+        /// socks5 with authentication is supported by using a forwarder proxy, the<br/>
+        /// correct string to use socks proxy with username/password auth is socks://USERNAME:PASSWORD@SERVER:PORT<br/>
+        /// http/https proxies with authentication are also supported: http://USERNAME:PASSWORD@SERVER:PORT
+        /// </summary>
+        /// <param name="url"></param>
+        /// <param name="newTab"></param>
+        /// <param name="newWindow"></param>
+        /// <param name="disposeOnDetach">If specified, disposes this context when debugging session disconnects.</param>
+        /// <param name="proxyServer">Proxy server, similar to the one passed to –proxy-server.</param>
+        /// <param name="proxyBypassList">Proxy bypass list, similar to the one passed to –proxy-bypass-list.</param>
+        /// <param name="originsWithUniversalNetworkAccess">An optional list of origins to grant unlimited cross-origin access to. Parts of the URL other than those constituting origin are ignored.</param>
+        /// <param name="clientCertificates">Custom SSL context for HTTPS proxy connections. If None, a default context is used.</param>
+        /// <param name="remoteCertificateValidationCallback"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        public async Task<Tab> CreateContextAsync(
+            string url = "chrome://welcome",
+            bool newTab = false,
+            bool newWindow = true,
+            bool disposeOnDetach = true,
+            string? proxyServer = null,
+            List<string>? proxyBypassList = null,
+            List<string>? originsWithUniversalNetworkAccess = null,
+            X509Certificate2Collection? clientCertificates = null,
+            RemoteCertificateValidationCallback? remoteCertificateValidationCallback = null,
+            CancellationToken token = default)
+        {
+            if (Connection == null)
+                throw new InvalidOperationException("Connection cannot be null.");
+
+            if (!string.IsNullOrWhiteSpace(proxyServer))
+            {
+                var forwarder = new ProxyForwarder(proxyServer, 
+                    clientCertificates, remoteCertificateValidationCallback);
+                _proxyForwarders.Add(forwarder);
+                proxyServer = forwarder.ProxyServer;
+            }
+
+            var ctxResult = await Connection.SendAsync(Cdp.Target.CreateBrowserContext(
+                DisposeOnDetach: disposeOnDetach,
+                ProxyServer: proxyServer,
+                ProxyBypassList: proxyBypassList?.Count > 0 ?
+                    string.Join(';', proxyBypassList) : null,
+                OriginsWithUniversalNetworkAccess: originsWithUniversalNetworkAccess
+            ), token: token);
+
+            var result = await Connection.SendAsync(
+                Cdp.Target.CreateTarget(url, BrowserContextId: ctxResult.BrowserContextId, NewWindow: newWindow, ForTab: newTab), token: token);
+
+            await WaitAsync(0.5, token);
+
+            var connection = _targets.FirstOrDefault(it => it.Target?.Type == "page" && it.Target?.TargetId == result.TargetId);
+            if (connection == null)
+                throw new InvalidOperationException("Targets connection cannot be null.");
+            return connection;
         }
 
         public async Task GrantAllPermissionsAsync(CancellationToken token = default)
