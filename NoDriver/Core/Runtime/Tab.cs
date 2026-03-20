@@ -5,13 +5,48 @@ using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
 {
+    /// <summary>
+    /// Tab is the controlling mechanism/connection to a 'target',<br/>
+    /// for most of us 'target' can be read as 'tab'. however it could also<br/>
+    /// be an iframe, serviceworker or background script for example,<br/>
+    /// although there isn't much to control for those.<br/>
+    /// <br/>
+    /// If you open a new window by using `browser.GetAsync(..., newWindow=True)`<br/>
+    /// your url will open a new window. this window is a 'tab'.<br/>
+    /// When you browse to another page, the tab will be the same (it is an browser view).<br/>
+    /// <br/>
+    /// So it's important to keep some reference to tab objects, in case you're<br/>
+    /// done interacting with elements and want to operate on the page level again.<br/>
+    /// <br/>
+    /// Custom CDP commands<br/>
+    /// ---------------------------<br/>
+    /// Tab object provide many useful and often-used methods. It is also<br/>
+    /// possible to utilize the included cdp classes to to something totally custom.<br/>
+    /// <br/>
+    /// The cdp package is a set of so-called "domains" with each having methods, events and types.<br/>
+    /// To send a cdp method, for example `Cdp.Page.Navigate`, you'll have to check<br/>
+    /// whether the method accepts any parameters and whether they are required or not.<br/>
+    /// <br/>
+    /// You can use:<br/>
+    /// <br/>
+    /// ```<br/>
+    /// await tab.SendAsync(Cdp.Page.Navigate(Url: "https://yoururlhere"))<br/>
+    /// ```<br/>
+    /// <br/>
+    /// So tab.SendAsync() accepts a generator object, which is created by calling a cdp method.<br/>
+    /// This way you can build very detailed and customized commands.<br/>
+    /// (Note: finding correct command combo's can be a time consuming task, luckily i added a whole bunch<br/>
+    /// of useful methods, preferably having the same api's or lookalikes, as in selenium)<br/>
+    /// <br/>
+    /// Some useful, often needed and simply required methods.
+    /// </summary>
     public class Tab : Connection, IEquatable<Tab>
     {
         private List<string>? _downloadBehavior = null;
 
         private int? _windowId = null;
         private Cdp.DOM.Node? _dom = null;
-        
+
         private bool _prepHeadlessDone = false;
         private bool _prepExpertDone = false;
 
@@ -29,7 +64,7 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public Tab(string webSocketUrl, Cdp.Target.TargetInfo? target = null, Browser? browser = null) : 
+        public Tab(string webSocketUrl, Cdp.Target.TargetInfo? target = null, Browser? browser = null) :
             base(webSocketUrl, target, browser)
         {
         }
@@ -52,11 +87,11 @@ namespace NoDriver.Core.Runtime
 
         public async Task PrepareHeadlessAsync(CancellationToken token = default)
         {
-            if (_prepHeadlessDone) 
+            if (_prepHeadlessDone)
                 return;
 
             var response = await SendOneshotAsync(Cdp.Runtime.Evaluate("navigator.userAgent"), token);
-            if (response == null) 
+            if (response == null)
                 return;
 
             if (response?.Result?.Value != null)
@@ -69,7 +104,7 @@ namespace NoDriver.Core.Runtime
 
         public async Task PrepareExpertAsync(CancellationToken token = default)
         {
-            if (_prepExpertDone) 
+            if (_prepExpertDone)
                 return;
 
             if (Browser != null)
@@ -102,7 +137,7 @@ namespace NoDriver.Core.Runtime
         /// Top level get. utilizes the first tab to retrieve given url.<br/>
         /// <br/>
         /// Convenience function known from selenium.<br/>
-        /// this function handles waits/sleeps and detects when DOM events fired, so it's the safest<br/>
+        /// This function handles waits and detects when DOM events fired, so it's the safest<br/>
         /// way of navigating.
         /// </summary>
         /// <param name="url">The url to navigate to.</param>
@@ -131,6 +166,14 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Find multiple elements by text.<br/>
+        /// Can also be used to wait for such element to appear.
+        /// </summary>
+        /// <param name="text">Text to search for. note: script contents are also considered text.</param>
+        /// <param name="timeout">Return null when after this many seconds nothing is found.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<List<Element>> FindAllAsync(string text, double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -148,6 +191,20 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
+        /// <summary>
+        /// Find single element by text.<br/>
+        /// Can also be used to wait for such element to appear.
+        /// </summary>
+        /// <param name="text">Text to search for. note: script contents are also considered text.</param>
+        /// <param name="bestMatch">When true (default), it will return the element which has the most<br/>
+        /// comparable string length. this could help tremendously, when for example<br/>
+        /// you search for "login", you'd probably want the login button element,<br/>
+        /// and not thousands of scripts,meta,headings containing a string of "login".<br/>
+        /// When false, it will return naively just the first match (but is way faster).</param>
+        /// <param name="returnEnclosingElement"></param>
+        /// <param name="timeout">Return null when after this many seconds nothing is found.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<Element?> FindAsync(string text, bool bestMatch = true, bool returnEnclosingElement = true, double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -165,6 +222,15 @@ namespace NoDriver.Core.Runtime
             return item;
         }
 
+        /// <summary>
+        /// Find multiple elements by css selector.<br/>
+        /// Can also be used to wait for such element to appear.
+        /// </summary>
+        /// <param name="selector">Css selector, eg: a[href], button[class*=close], a &gt; img[src]</param>
+        /// <param name="timeout">Return null when after this many seconds nothing is found.</param>
+        /// <param name="includeFrames">Whether to include results in iframes.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<List<Element>> SelectAllAsync(string selector, double timeout = 10, bool includeFrames = false, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -192,6 +258,14 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
+        /// <summary>
+        /// Find single element by css selector.<br/>
+        /// Can also be used to wait for such element to appear.
+        /// </summary>
+        /// <param name="selector">Css selector, eg: a[href], button[class*=close], a &gt; img[src]</param>
+        /// <param name="timeout">Return null when after this many seconds nothing is found.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<Element?> SelectAsync(string selector, double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -209,6 +283,24 @@ namespace NoDriver.Core.Runtime
             return item;
         }
 
+        /// <summary>
+        /// Find elements by xpath string.<br/>
+        /// If not immediately found, retries are attempted until `timeout` is reached (default 2.5 seconds).<br/>
+        /// In case nothing is found, it returns an empty list. It will not throw.<br/>
+        /// This timeout mechanism helps when relying on some element to appear before continuing your script.<br/>
+        /// <br/>
+        /// .. code-block:<br/>
+        /// <br/>
+        ///      // find all the inline scripts (script elements without src attribute)<br/>
+        ///      await tab.xpath('//script[not(@src)]')<br/>
+        /// <br/>
+        ///      // or here, more complex, but my personal favorite to case-insensitive text search<br/>
+        ///      await tab.xpath('//text()[ contains( translate(., "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"),"test")]')
+        /// </summary>
+        /// <param name="xpath"></param>
+        /// <param name="timeout"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<List<Element>> XPathAsync(string xpath, double timeout = 2.5, CancellationToken token = default)
         {
             var items = new List<Element>();
@@ -239,6 +331,16 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
+        /// <summary>
+        /// Equivalent of javascripts document.querySelectorAll.<br/>
+        /// This is considered one of the main methods to use in this package.<br/>
+        /// <br/>
+        /// It returns all matching `Element` objects.
+        /// </summary>
+        /// <param name="selector">Css selector.</param>
+        /// <param name="node">Internal use.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<List<Element>> QuerySelectorAllAsync(string selector, Element? node = null, CancellationToken token = default)
         {
             return await QuerySelectorAllAsync(selector, node, false, token);
@@ -303,6 +405,13 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
+        /// <summary>
+        /// Find single element based on css selector string.
+        /// </summary>
+        /// <param name="selector">Css selector.</param>
+        /// <param name="node"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<Element?> QuerySelectorAsync(string selector, Element? node = null, CancellationToken token = default)
         {
             return await QuerySelectorAsync(selector, node, false, token);
@@ -363,6 +472,15 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
+        /// <summary>
+        /// Returns element which match the given text.<br/>
+        /// Please note: this may (or will) also return any other element (like inline scripts),<br/>
+        /// which happen to contain that text.
+        /// </summary>
+        /// <param name="text"></param>
+        /// <param name="tagHint">When provided, narrows down search to only elements which match given tag eg: a, div, script, span</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<List<Element>> FindElementsByTextAsync(string text, string? tagHint = null, CancellationToken token = default)
         {
             text = text.Trim();
@@ -430,6 +548,17 @@ namespace NoDriver.Core.Runtime
             return items;
         }
 
+        /// <summary>
+        /// Finds and returns the first element containing &lt;text&gt;, or best match.
+        /// </summary>
+        /// <param name="text"></param>
+        /// <param name="bestMatch">When true, which is MUCH more expensive (thus much slower),<br/>
+        /// will find the closest match based on length.<br/>
+        /// This could help tremendously, when for example you search for "login", you'd probably want the login button element,<br/>
+        /// and not thousands of scripts,meta,headings containing a string of "login".</param>
+        /// <param name="returnEnclosingElement"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<Element?> FindElementByTextAsync(string text, bool bestMatch = false, bool returnEnclosingElement = true, CancellationToken token = default)
         {
             var items = await FindElementsByTextAsync(text, token: token);
@@ -438,6 +567,20 @@ namespace NoDriver.Core.Runtime
             return items.FirstOrDefault();
         }
 
+        /// <summary>
+        /// Variant on QuerySelectorAllAsync and FindElementsByTextAsync<br/>
+        /// this variant takes either selector or text, and will block until<br/>
+        /// the requested element(s) are found.<br/>
+        /// <br/>
+        /// It will block for a maximum of &lt;timeout&gt; seconds, after which<br/>
+        /// an TimeoutException will be throw.
+        /// </summary>
+        /// <param name="selector">Css selector.</param>
+        /// <param name="text"></param>
+        /// <param name="timeout"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="TimeoutException"></exception>
         public async Task<Element?> WaitForAsync(string selector = "", string text = "", double timeout = 10, CancellationToken token = default)
         {
             var sw = Stopwatch.StartNew();
@@ -483,16 +626,33 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
+        /// <summary>
+        /// History back.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task BackAsync(CancellationToken token = default)
         {
             await SendAsync(Cdp.Runtime.Evaluate("window.history.back()"), token: token);
         }
 
-        public async Task ForwardAsync(CancellationToken token = default) 
+        /// <summary>
+        /// History forward.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public async Task ForwardAsync(CancellationToken token = default)
         {
             await SendAsync(Cdp.Runtime.Evaluate("window.history.forward()"), token: token);
         }
 
+        /// <summary>
+        /// Reloads the page.
+        /// </summary>
+        /// <param name="ignoreCache">When set to true (default), it ignores cache, and re-downloads the items.</param>
+        /// <param name="scriptToEvaluateOnLoad">Script to run on load. I actually haven't experimented with this one, so no guarantees.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task ReloadAsync(bool ignoreCache = true, string? scriptToEvaluateOnLoad = null, CancellationToken token = default)
         {
             await SendAsync(Cdp.Page.Reload(IgnoreCache: ignoreCache, ScriptToEvaluateOnLoad: scriptToEvaluateOnLoad), token: token);
@@ -520,9 +680,17 @@ namespace NoDriver.Core.Runtime
             return (result.Result, result.ExceptionDetails);
         }
 
+        /// <summary>
+        /// Dump given js object with its properties and values as a dict.<br/>
+        /// note: complex objects might not be serializable, therefore this method is not a "source of thruth"
+        /// </summary>
+        /// <param name="objName">The js object to dump.</param>
+        /// <param name="returnByValue">If you want an tuple of cdp objects (returnvalue, errors), set this to false.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> JsDumpsAsync(string objName, bool returnByValue = true, CancellationToken token = default)
         {
-            var jsCodeA = 
+            var jsCodeA =
                 $$"""
                     function ___dump(obj, _d = 0) {
                         let _typesA = ['object', 'function'];
@@ -596,7 +764,7 @@ namespace NoDriver.Core.Runtime
                     ___dumpY({{objName}})             
                 """;
 
-            var jsCodeB = 
+            var jsCodeB =
                 $$"""
                     ((obj, visited = new WeakSet()) => {
                      if (visited.has(obj)) {
@@ -625,9 +793,9 @@ namespace NoDriver.Core.Runtime
                 """;
 
             var result = await SendAsync(Cdp.Runtime.Evaluate(
-                jsCodeA, 
-                AwaitPromise: true, 
-                ReturnByValue: returnByValue, 
+                jsCodeA,
+                AwaitPromise: true,
+                ReturnByValue: returnByValue,
                 AllowUnsafeEvalBlockedByCSP: true), token: token);
 
             if (result.ExceptionDetails != null)
@@ -640,13 +808,23 @@ namespace NoDriver.Core.Runtime
             }
             return (result.Result, result.ExceptionDetails);
         }
-        
+
+        /// <summary>
+        /// Close the current target (ie: tab,window,page)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task CloseAsync(CancellationToken token = default)
         {
             if (Target?.TargetId != null)
                 await SendAsync(Cdp.Target.CloseTarget(Target.TargetId), token: token);
         }
 
+        /// <summary>
+        /// Gets the current page source content (html)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<string> GetContentAsync(CancellationToken token = default)
         {
             var docResult = await SendAsync(Cdp.DOM.GetDocument(-1, true), token: token);
@@ -655,6 +833,11 @@ namespace NoDriver.Core.Runtime
             return result.OuterHTML;
         }
 
+        /// <summary>
+        /// Get the window bounds.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<(Cdp.Browser.WindowID WindowId, Cdp.Browser.Bounds Bounds)?> GetWindowAsync(CancellationToken token = default)
         {
             if (Target?.TargetId == null)
@@ -663,11 +846,21 @@ namespace NoDriver.Core.Runtime
             return (result.WindowId, result.Bounds);
         }
 
+        /// <summary>
+        /// Maximize page/tab/window.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task MaximizeAsync(CancellationToken token = default)
         {
             await SetWindowStateAsync(state: "maximize", token: token);
         }
 
+        /// <summary>
+        /// Minimize page/tab/window.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task MinimizeAsync(CancellationToken token = default)
         {
             await SetWindowStateAsync(state: "minimize", token: token);
@@ -683,11 +876,39 @@ namespace NoDriver.Core.Runtime
             await SetWindowStateAsync(state: "normal", token: token);
         }
 
+        /// <summary>
+        /// Set window size and position.
+        /// </summary>
+        /// <param name="left">Pixels from the left of the screen to the window top-left corner.</param>
+        /// <param name="top">Pixels from the top of the screen to the window top-left corner.</param>
+        /// <param name="width">Width of the window in pixels.</param>
+        /// <param name="height">Height of the window in pixels.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task SetWindowSizeAsync(int left = 0, int top = 0, int width = 1280, int height = 1024, CancellationToken token = default)
         {
             await SetWindowStateAsync(left, top, width, height, token: token);
         }
 
+        /// <summary>
+        /// Sets the window size or state.<br/>
+        /// <br/>
+        /// For state you can provide the full name like minimized, maximized, normal, fullscreen, or<br/>
+        /// something which leads to either of those, like min, mini, mi,  max, ma, maxi, full, fu, no, nor<br/>
+        /// in case state is set other than "normal", the left, top, width, and height are ignored.
+        /// </summary>
+        /// <param name="left">Desired offset from left, in pixels.</param>
+        /// <param name="top">Desired offset from the top, in pixels.</param>
+        /// <param name="width">Desired width in pixels.</param>
+        /// <param name="height">Desired height in pixels.</param>
+        /// <param name="state">Can be one of the following strings:<br/>
+        ///     - normal<br/>
+        ///     - fullscreen<br/>
+        ///     - maximized<br/>
+        ///     - minimized</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentException"></exception>
         public async Task SetWindowStateAsync(int left = 0, int top = 0, int width = 1280, int height = 720, string state = "normal", CancellationToken token = default)
         {
             var availableStates = new[]
@@ -730,17 +951,33 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
+        /// <summary>
+        /// Active this target (ie: tab,window,page)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task ActivateAsync(CancellationToken token = default)
         {
             if (Target?.TargetId != null)
                 await SendAsync(Cdp.Target.ActivateTarget(Target.TargetId), token: token);
         }
 
+        /// <summary>
+        /// Alias to ActivateAsync.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task BringToFrontAsync(CancellationToken token = default)
         {
             await ActivateAsync(token);
         }
 
+        /// <summary>
+        /// Scrolls up maybe.
+        /// </summary>
+        /// <param name="amount">Number in percentage. 25 is a quarter of page, 50 half, and 1000 is 10x the page.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task ScrollUpAsync(int amount = 25, CancellationToken token = default)
         {
             var result = await GetWindowAsync(token);
@@ -758,11 +995,23 @@ namespace NoDriver.Core.Runtime
                 Speed: 7777), token: token);
         }
 
+        /// <summary>
+        /// Scrolls down maybe.
+        /// </summary>
+        /// <param name="amount">Number in percentage. 25 is a quarter of page, 50 half, and 1000 is 10x the page.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task ScrollDownAsync(int amount = 25, CancellationToken token = default)
         {
             await ScrollUpAsync(-amount, token);
         }
 
+        /// <summary>
+        /// Returns true if scroll is at the bottom of the page.<br/>
+        /// Handy when you need to scroll over paginated pages of different lengths.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<bool> ScrollBottomReachedAsync(CancellationToken token = default)
         {
             var (remoteObj, exception) = await EvaluateAsync(
@@ -770,6 +1019,13 @@ namespace NoDriver.Core.Runtime
             return remoteObj?.Value?.GetValue<bool>() ?? false;
         }
 
+        /// <summary>
+        /// Sets the download path and allows downloads.<br/>
+        /// This is required for any download function to work (well not entirely, since when unset we set a default folder)
+        /// </summary>
+        /// <param name="path"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task SetDownloadPathAsync(string path, CancellationToken token = default)
         {
             if (!Directory.Exists(path))
@@ -778,6 +1034,13 @@ namespace NoDriver.Core.Runtime
             _downloadBehavior = new List<string> { "allow", path };
         }
 
+        /// <summary>
+        /// Downloads file by given url.
+        /// </summary>
+        /// <param name="url">Url of the file.</param>
+        /// <param name="filename">The name for the file. if not specified the name is composed from the url file name.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task DownloadFileAsync(string url, string? filename = null, CancellationToken token = default)
         {
             if (_downloadBehavior == null || _downloadBehavior.Count == 0)
@@ -792,7 +1055,7 @@ namespace NoDriver.Core.Runtime
             if (string.IsNullOrWhiteSpace(filename))
                 filename = url.Split('/').Last().Split('?').First();
 
-            var code = 
+            var code =
                 $$"""
                     (elem) => {
                         async function _downloadFile(
@@ -822,11 +1085,11 @@ namespace NoDriver.Core.Runtime
             var result = await QuerySelectorAllAsync("body", token: token);
             var body = result.First();
             await body.UpdateAsync(token: token);
-            await SendAsync(Cdp.Runtime.CallFunctionOn(code, 
-                ObjectId: body.ObjectId, 
-                Arguments: new List<Cdp.Runtime.CallArgument> 
-                { 
-                    new Cdp.Runtime.CallArgument(ObjectId: body.ObjectId) 
+            await SendAsync(Cdp.Runtime.CallFunctionOn(code,
+                ObjectId: body.ObjectId,
+                Arguments: new List<Cdp.Runtime.CallArgument>
+                {
+                    new Cdp.Runtime.CallArgument(ObjectId: body.ObjectId)
                 }), token: token);
             await WaitAsync(0.1, token);
         }
@@ -877,6 +1140,16 @@ namespace NoDriver.Core.Runtime
             return await GetScreenshotDataAsync(format, fullPage, token);
         }
 
+        /// <summary>
+        /// Saves a screenshot of the page.<br/>
+        /// This is not the same as `Element.SaveScreenshotAsync`, which saves a screenshot of a single element only.
+        /// </summary>
+        /// <param name="filename">Uses this as the save path.</param>
+        /// <param name="format">jpeg or png (defaults to jpeg)</param>
+        /// <param name="fullPage">When false (default) it captures the current viewport. when true, it captures the entire page.</param>
+        /// <param name="token"></param>
+        /// <returns>The path/filename of saved screenshot.</returns>
+        /// <exception cref="Exception"></exception>
         public async Task<string> SaveScreenshotAsync(string filename = "auto", string format = "jpeg", bool fullPage = false, CancellationToken token = default)
         {
             await WaitAsync(1, token: token);
@@ -897,18 +1170,29 @@ namespace NoDriver.Core.Runtime
             if (!string.IsNullOrWhiteSpace(parentDir))
                 if (!Directory.Exists(parentDir))
                     Directory.CreateDirectory(parentDir);
-            
+
             var bytes = await GetScreenshotDataAsync(format, fullPage, token);
             await File.WriteAllBytesAsync(path, bytes, token);
             return path;
         }
 
+        /// <summary>
+        /// Get all elements of tag: link, a, img, scripts meta, video, audio.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<List<Element>> GetAllLinkedSourcesAsync(CancellationToken token = default)
         {
             var allAssets = await QuerySelectorAllAsync("a,link,img,script,meta", token: token);
             return allAssets.Select(it => new Element(it.Node, this)).ToList();
         }
 
+        /// <summary>
+        /// Convenience function, which returns all links (a,link,img,script,meta)
+        /// </summary>
+        /// <param name="absolute">Try to build all the links in absolute form instead of "as is", often relative.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<List<string>> GetAllUrlsAsync(bool absolute = true, CancellationToken token = default)
         {
             var res = new HashSet<string>();
@@ -918,7 +1202,7 @@ namespace NoDriver.Core.Runtime
             {
                 if (!absolute)
                 {
-                    var rawUrl = 
+                    var rawUrl =
                         asset.Attrs.GetValueOrDefault("src") ??
                         asset.Attrs.GetValueOrDefault("href");
                     if (!string.IsNullOrWhiteSpace(rawUrl))
@@ -936,7 +1220,7 @@ namespace NoDriver.Core.Runtime
                             if (string.IsNullOrWhiteSpace(v))
                                 continue;
 
-                            if (v.Contains("#")) 
+                            if (v.Contains("#"))
                                 continue;
 
                             if (v.StartsWith("javascript:"))
@@ -968,6 +1252,11 @@ namespace NoDriver.Core.Runtime
             return res.ToList();
         }
 
+        /// <summary>
+        /// Get local storage items as dict of strings (careful!, proper deserialization needs to be done if needed)
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<Dictionary<string, string>> GetLocalStorageAsync(CancellationToken token = default)
         {
             if (string.IsNullOrWhiteSpace(Target?.Url))
@@ -990,6 +1279,13 @@ namespace NoDriver.Core.Runtime
             return retval;
         }
 
+        /// <summary>
+        /// Set local storage.<br/>
+        /// Dict items must be strings. simple types will be converted to strings automatically.
+        /// </summary>
+        /// <param name="items"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task SetLocalStorageAsync(Dictionary<string, string> items, CancellationToken token = default)
         {
             if (string.IsNullOrWhiteSpace(Target?.Url))
@@ -1008,18 +1304,36 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Retrieves the frame tree for current tab.<br/>
+        /// There seems no real difference between `Tab.GetFrameResourceTreeAsync`.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<Cdp.Page.FrameTree> GetFrameTreeAsync(CancellationToken token = default)
         {
             var result = await SendAsync(Cdp.Page.GetFrameTree(), token: token);
             return result.FrameTree;
         }
 
+        /// <summary>
+        /// Retrieves the frame resource tree for current tab.<br/>
+        /// There seems no real difference between `Tab.GetFrameTreeAsync`<br/>
+        /// but still it returns a different object.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<Cdp.Page.FrameResourceTree> GetFrameResourceTreeAsync(CancellationToken token = default)
         {
             var result = await SendAsync(Cdp.Page.GetResourceTree(), token: token);
             return result.FrameTree;
         }
 
+        /// <summary>
+        /// Gets the urls of resources.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<List<string>> GetFrameResourceUrlsAsync(CancellationToken token = default)
         {
             var tree = await GetFrameResourceTreeAsync(token);
@@ -1048,7 +1362,7 @@ namespace NoDriver.Core.Runtime
                     var frame = item.frame;
                     var resource = item.resource;
 
-                    if (frame == null || resource == null) 
+                    if (frame == null || resource == null)
                         continue;
 
                     var result = await SendAsync(Cdp.Page.SearchInResource(
@@ -1075,7 +1389,7 @@ namespace NoDriver.Core.Runtime
                 {
                     var currentX = stepSizeX * i;
                     var currentY = stepSizeY * i;
-                    if (flash) 
+                    if (flash)
                         await FlashPointAsync(currentX, currentY, token: token);
                     await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: currentX, Y: currentY), token: token);
                 }
@@ -1085,16 +1399,27 @@ namespace NoDriver.Core.Runtime
                 await SendAsync(Cdp.Input.DispatchMouseEvent("mouseMoved", X: x, Y: y), token: token);
             }
 
-            if (flash) 
+            if (flash)
                 await FlashPointAsync(x, y, token: token);
-            else 
+            else
                 await WaitAsync(0.05, token: token);
 
             await SendAsync(Cdp.Input.DispatchMouseEvent("mouseReleased", X: x, Y: y), token: token);
-            if (flash) 
+            if (flash)
                 await FlashPointAsync(x, y, token: token);
         }
 
+        /// <summary>
+        /// Native click on position x,y
+        /// </summary>
+        /// <param name="x"></param>
+        /// <param name="y"></param>
+        /// <param name="button"></param>
+        /// <param name="buttons"></param>
+        /// <param name="modifiers">Bit field representing pressed modifier keys.<br/>
+        /// Alt=1, Ctrl=2, Meta/Command=4, Shift=8 (default: 0).</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task MouseClickAsync(double x, double y, string button = "left", int buttons = 1, int modifiers = 0, CancellationToken token = default)
         {
             await SendAsync(Cdp.Input.DispatchMouseEvent("mousePressed", x, y,
@@ -1103,6 +1428,19 @@ namespace NoDriver.Core.Runtime
                 Modifiers: modifiers, Button: new Cdp.Input.MouseButton(button), Buttons: buttons, ClickCount: 1), token: token);
         }
 
+        /// <summary>
+        /// Drag mouse from one point to another. holding button pressed.<br/>
+        /// You are probably looking for `Element.MouseDragAsync` method. where you<br/>
+        /// can drag on the element.
+        /// </summary>
+        /// <param name="sourcePoint"></param>
+        /// <param name="destPoint"></param>
+        /// <param name="relative">When true, treats point as relative. for example (-100, 200) will move left 100px and down 200px</param>
+        /// <param name="steps">Move in &lt;steps&gt; points, this could make it look more "natural" (default 1),<br/>
+        /// but also a lot slower.<br/>
+        /// For very smooth action use 50-100</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task MouseDragAsync((double X, double Y) sourcePoint, (double X, double Y) destPoint, bool relative = false, int steps = 1, CancellationToken token = default)
         {
             if (relative)
@@ -1173,6 +1511,12 @@ namespace NoDriver.Core.Runtime
             await SendAsync(Cdp.Runtime.Evaluate(script, AwaitPromise: true, UserGesture: true), token: token);
         }
 
+        /// <summary>
+        /// When you enter a site where the certificate is invalid<br/>
+        /// you get a warning. call this function to "proceed".
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task BypassInsecureConnectionWarningAsync(CancellationToken token = default)
         {
             var body = await SelectAsync("body", token: token);
@@ -1180,6 +1524,28 @@ namespace NoDriver.Core.Runtime
                 await body.SendKeysAsync("thisisunsafe", token);
         }
 
+        /// <summary>
+        /// Attempts to find the location of given template image in the current viewport.<br/>
+        /// The only real use case for this is bot-detection systems.<br/>
+        /// You can find for example the location of a 'verify'-checkbox,<br/>
+        /// which are hidden from dom using shadow-root's or workers.<br/>
+        /// <br/>
+        /// Template_image can be custom (for example your language, included is english only),<br/>
+        /// but you need to create the template image yourself, which is just a cropped.<br/>
+        /// Image of the area, see example image, where the target is exactly in the center.<br/>
+        /// <br/>
+        /// example (111x71)<br/>
+        /// ---------<br/>
+        /// This includes the white space on the left, to make the box center.<br/>
+        /// <br/>
+        /// .. image:: template_example.png<br/>
+        ///     :width: 111<br/>
+        ///     :alt: example template image
+        /// </summary>
+        /// <param name="templateImage"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="FileNotFoundException"></exception>
         public async Task<(int X, int Y)?> TemplateLocationAsync(string? templateImage = null, CancellationToken token = default)
         {
             if (!string.IsNullOrWhiteSpace(templateImage))
@@ -1227,6 +1593,28 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Convenience function to verify cf checkbox.<br/>
+        /// <br/>
+        /// Template_image can be custom (for example your language, included is english only),<br/>
+        /// but you need to create the template image yourself, which is just a cropped.<br/>
+        /// Image of the area, see example image, where the target is exactly in the center.<br/>
+        /// <br/>
+        /// example (111x71)<br/>
+        /// ---------<br/>
+        /// This includes the white space on the left, to make the box center.<br/>
+        /// <br/>
+        /// .. image:: template_example.png<br/>
+        ///     :width: 111<br/>
+        ///     :alt: example template image<br/>
+        /// </summary>
+        /// <param name="templateImage">Template_image can be custom (for example your language, included is english only),<br/>
+        /// but you need to create the template image yourself, which is just a cropped.<br/>
+        /// Image of the area, where the target is exactly in the center.</param>
+        /// <param name="flash">Whether to show an indicator where the mouse is clicking.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
         public async Task VerifyCfAsync(string? templateImage = null, bool flash = false, CancellationToken token = default)
         {
             if (Browser?.Config?.Expert == true)

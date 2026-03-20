@@ -4,6 +4,17 @@ using System.IO.Compression;
 
 namespace NoDriver.Core.Runtime
 {
+    /// <summary>
+    /// Creates a config object.<br/>
+    /// Can be called without any arguments to generate a best-practice config, which is recommended.<br/>
+    /// <br/>
+    /// Calling the method GetArgs(), will return the list of arguments which<br/>
+    /// are provided to the browser.<br/>
+    /// <br/>
+    /// Additional arguments can be added using the AddArgument() method.<br/>
+    /// <br/>
+    /// Instances of this class are usually not instantiated by end users.
+    /// </summary>
     public class Config
     {
         private readonly List<string> _defaultBrowserArgs = new()
@@ -28,6 +39,9 @@ namespace NoDriver.Core.Runtime
         private string _userDataDir = "";
         private bool _customDataDir = true;
 
+        /// <summary>
+        /// The data directory to use.
+        /// </summary>
         public string UserDataDir
         {
             get => _userDataDir;
@@ -41,13 +55,33 @@ namespace NoDriver.Core.Runtime
             }
         }
         public bool CustomDataDir => _customDataDir;
+        /// <summary>
+        /// Language string to use other than the default "CultureInfo.CurrentCulture".
+        /// </summary>
         public string Lang { get; set; } = "";
+        /// <summary>
+        /// Specify browser executable, instead of using autodetect.
+        /// </summary>
         public string BrowserExecutablePath { get; set; } = "";
         public string? Host { get; set; } = null;
         public int? Port { get; set; } = null;
+        /// <summary>
+        /// Set to True for headless mode.
+        /// </summary>
         public bool Headless { get; set; } = false;
+        /// <summary>
+        /// Disables sandbox.
+        /// </summary>
         public bool Sandbox { get; set; } = true;
+        /// <summary>
+        /// When set to true, enabled "expert" mode.<br/>
+        /// This conveys, the inclusion of parameters:  ----disable-site-isolation-trials,<br/>
+        /// as well as some scripts and patching useful for debugging (for example, ensuring shadow-root is always in "open" mode)
+        /// </summary>
         public bool Expert { get; set; } = false;
+        /// <summary>
+        /// Use autodiscovery of targets.
+        /// </summary>
         public bool AutodiscoverTargets { get; set; } = true;
         public Dictionary<string, object> Attributes { get; } = new();
 
@@ -77,20 +111,23 @@ namespace NoDriver.Core.Runtime
 
             //----- Language -----
             if (string.IsNullOrWhiteSpace(Lang))
-            {
                 Lang = CultureInfo.CurrentCulture.Name;
-            }
             //----- Language -----
 
             //----- Sandbox -----
             if (PlatformHelper.IsPosix() && PlatformHelper.IsRoot() && Sandbox)
             {
-                //Console.WriteLine("Detected root usage, auto disabling sandbox mode.");
+                Console.WriteLine("Detected root usage, auto disabling sandbox mode.");
                 Sandbox = false;
             }
             //----- Sandbox -----
         }
 
+        /// <summary>
+        /// Forwarded to browser executable. eg: ["--some-chromeparam=somevalue", "some-other-param=someval"]
+        /// </summary>
+        /// <param name="arg"></param>
+        /// <exception cref="ArgumentException"></exception>
         public void AddArgument(string arg)
         {
             var lowerArg = arg.ToLower();
@@ -108,6 +145,12 @@ namespace NoDriver.Core.Runtime
             _browserArgs.Add(arg);
         }
 
+        /// <summary>
+        /// Adds an extension to load, you could point extensionPath
+        /// to a folder (containing the manifest), or extension file (crx)
+        /// </summary>
+        /// <param name="extensionPath"></param>
+        /// <exception cref="FileNotFoundException"></exception>
         public void AddExtension(string extensionPath)
         {
             if (!File.Exists(extensionPath) && !Directory.Exists(extensionPath))
@@ -136,6 +179,10 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Get the list of arguments which are provided to the browser.
+        /// </summary>
+        /// <returns></returns>
         public List<string> GetArgs()
         {
             var args = new List<string>(_defaultBrowserArgs);
