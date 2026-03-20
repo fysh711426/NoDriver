@@ -716,6 +716,20 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        public async Task<(int Width, int Height)?> GetScreenResolutionAsync(CancellationToken token = default)
+        {
+            var expression = "({ width: window.screen.availWidth, height: window.screen.availHeight })";
+            var result = await SendAsync(Cdp.Runtime.Evaluate(expression, ReturnByValue: true));
+            var data = result.Result.Value;
+
+            var width = data?["width"]?.GetValue<int?>();
+            var height = data?["height"]?.GetValue<int?>();
+
+            if (width != null && height != null)
+                return (width.Value, height.Value);
+            return null;
+        }
+
         public async Task ActivateAsync(CancellationToken token = default)
         {
             if (Target?.TargetId != null)

@@ -344,6 +344,19 @@ namespace Test
         }
 
         [TestMethod]
+        public async Task GetScreenResolutionAsync_ShouldReturnValidDimensions()
+        {
+            // Act
+            var resolution = await _tab!.GetScreenResolutionAsync();
+
+            // Assert
+            // 在 Headless 模式下可能會有預設解析度 (如 800x600)
+            Assert.IsNotNull(resolution, "無法取得螢幕解析度");
+            Assert.IsTrue(resolution.Value.Width > 0, "寬度應大於 0");
+            Assert.IsTrue(resolution.Value.Height > 0, "高度應大於 0");
+        }
+
+        [TestMethod]
         public async Task Activate_And_BringToFront_ShouldExecuteWithoutError()
         {
             // Act & Assert: 驗證 CDP 呼叫正常無例外

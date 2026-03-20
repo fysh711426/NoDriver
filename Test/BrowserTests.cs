@@ -132,19 +132,6 @@ namespace Test
         //}
 
         [TestMethod]
-        public async Task GetScreenResolutionAsync_ShouldReturnValidDimensions()
-        {
-            // Act
-            var resolution = await _browser!.GetScreenResolutionAsync();
-
-            // Assert
-            // 在 Headless 模式下可能會有預設解析度 (如 800x600)
-            Assert.IsNotNull(resolution, "無法取得螢幕解析度");
-            Assert.IsTrue(resolution.Value.Width > 0, "寬度應大於 0");
-            Assert.IsTrue(resolution.Value.Height > 0, "高度應大於 0");
-        }
-
-        [TestMethod]
         public async Task TileWindowsAsync_ShouldCalculateAndSetGrid()
         {
             // Arrange: 開啟兩個新視窗
@@ -175,16 +162,16 @@ namespace Test
         {
             // Arrange
             var newTab = await _browser!.GetAsync("chrome://version", newTab: true);
+            await Task.Delay(1000);
             var count = _browser.Targets.Count;
 
             // Act
             await newTab.CloseAsync();
             // 等待 Chrome 發出 TargetDestroyed 事件並讓 Browser 內部處理
-            //await _browser.WaitAsync(1.0);
             await Task.Delay(1000);
+            var finalCount = _browser.Targets.Count;
 
             // Assert
-            var finalCount = _browser.Targets.Count;
             Assert.IsTrue(finalCount < count, "關閉分頁後，Targets 列表的數量應該減少");
             Assert.IsFalse(_browser.Tabs.Contains(newTab), "被關閉的分頁不應再存在於 Tabs 列表中");
         }

@@ -473,24 +473,6 @@ namespace NoDriver.Core.Runtime
             }
         }
         
-        //ok 要測試
-        public async Task<(int Width, int Height)?> GetScreenResolutionAsync(CancellationToken token = default)
-        {
-            if (Connection != null)
-            {
-                var expression = "({ width: window.screen.availWidth, height: window.screen.availHeight })";
-                var result = await Connection.SendAsync(Cdp.Runtime.Evaluate(expression, ReturnByValue: true));
-                var data = result.Result.Value;
-
-                var width = data?["width"]?.GetValue<int?>();
-                var height = data?["height"]?.GetValue<int?>();
-
-                if (width != null && height != null)
-                    return (width.Value, height.Value);
-            }
-            return null;
-        }
-
         public async Task UpdateTargetsAsync(CancellationToken token = default)
         {
             if (Connection != null)
