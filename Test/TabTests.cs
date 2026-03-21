@@ -434,7 +434,7 @@ namespace Test
             // Assert
             Assert.IsTrue(File.Exists(filePath), "截圖檔案應該被建立");
 
-            // 清理測試產生的檔案
+            // Cleanup
             if (File.Exists(filePath)) 
                 File.Delete(filePath);
         }

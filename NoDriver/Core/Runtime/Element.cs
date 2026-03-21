@@ -1,6 +1,7 @@
 ﻿using NoDriver.Core.Messaging;
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace NoDriver.Core.Runtime
@@ -49,27 +50,18 @@ namespace NoDriver.Core.Runtime
         public Cdp.DOM.CompatibilityMode? CompatibilityMode => _node.CompatibilityMode;
         public Cdp.DOM.BackendNode? AssignedSlot => _node.AssignedSlot;
         public Tab Tab => _tab;
-        //ok 要測試
-        public List<Element> ShadowChildren
+        public IEnumerable<Element> ShadowChildren
         {
             get
             {
-                var children = new List<Element>();
                 if (ShadowRoots?.Count > 0)
                 {
                     var root = ShadowRoots[0];
                     if (root.ShadowRootType == Cdp.DOM.ShadowRootType.OPEN)
-                    {
                         if (root.Children != null)
-                        {
                             foreach (var child in root.Children)
-                            {
-                                children.Add(new Element(child, _tab));
-                            }
-                        }
-                    }
+                                yield return new Element(child, _tab);
                 }
-                return children;
             }
         }
         public Cdp.DOM.Node Node => _node;
@@ -79,7 +71,6 @@ namespace NoDriver.Core.Runtime
             set => _tree = value;
         }
         public ConcurrentDictionary<string, string> Attrs => _attrs;
-        //ok 要測試
         public Element? Parent
         {
             get
@@ -92,7 +83,6 @@ namespace NoDriver.Core.Runtime
                 return null;
             }
         }
-        //ok 要測試
         public IEnumerable<Element> Children
         {
             get
@@ -116,7 +106,6 @@ namespace NoDriver.Core.Runtime
         }
         public Cdp.Runtime.RemoteObject? RemoteObject => _remoteObject;
         public Cdp.Runtime.RemoteObjectId? ObjectId => RemoteObject?.ObjectId;
-        //ok 要測試
         public string Text
         {
             get
@@ -125,7 +114,6 @@ namespace NoDriver.Core.Runtime
                 return textNode?.NodeValue ?? "";
             }
         }
-        //ok 要測試
         public string TextAll
         {
             get
@@ -146,7 +134,12 @@ namespace NoDriver.Core.Runtime
             MakeAttrs();
         }
 
-        //ok 要測試
+        public async Task<string> GetHtmlAsync(CancellationToken token = default)
+        {
+            var result = await _tab.SendAsync(Cdp.DOM.GetOuterHTML(BackendNodeId: BackendNodeId), token: token);
+            return result.OuterHTML;
+        }
+
         public async Task SaveToDomAsync(CancellationToken token = default)
         {
             var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
@@ -155,7 +148,6 @@ namespace NoDriver.Core.Runtime
             await UpdateAsync(token: token);
         }
 
-        //ok 要測試
         public async Task RemoveFromDomAsync(CancellationToken token = default)
         {
             await UpdateAsync(token: token);
@@ -197,25 +189,6 @@ namespace NoDriver.Core.Runtime
             return this;
         }
 
-        //ok
-        public async Task ClickAsync(CancellationToken token = default)
-        {
-            var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
-            _remoteObject = result.Object;
-
-            await FlashAsync(0.25, token);
-            await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
-                "(el) => el.click()",
-                ObjectId: _remoteObject.ObjectId,
-                Arguments: new List<Cdp.Runtime.CallArgument>
-                {
-                    new Cdp.Runtime.CallArgument(ObjectId: _remoteObject.ObjectId)
-                },
-                AwaitPromise: true,
-                UserGesture: true,
-                ReturnByValue: true), token: token);
-        }
-
         public async Task<JsonNode?> GetJsAttributesAsync()
         {
             var (remoteObj, exception) = await ApplyAsync(@"
@@ -226,17 +199,16 @@ namespace NoDriver.Core.Runtime
                     }
                     return JSON.stringify(o)
                 }");
-            return remoteObj.Value;
-            //return JsonSerializer.Deserialize<Dictionary<string, object>>(jsonStr);
+            if (remoteObj.Value != null)
+                return JsonSerializer.Deserialize<JsonNode>(remoteObj.Value.ToString());
+            return null;
         }
 
-        //ok 要測試
         public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> CallAsync(string jsMethod, CancellationToken token = default)
         {
             return await ApplyAsync($"(e) => e['{jsMethod}']()", token: token);
         }
 
-        //ok 要測試
         public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> ApplyAsync(string jsFunction, bool returnByValue = true, CancellationToken token = default)
         {
             var resolveResult = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
@@ -255,7 +227,6 @@ namespace NoDriver.Core.Runtime
             return (result.Result, result.ExceptionDetails);
         }
 
-        //ok 要檢查 value 是不是有正確轉換
         public async Task<Position?> GetPositionAsync(bool abs = false, CancellationToken token = default)
         {
             if (Parent == null || _remoteObject?.ObjectId == null)
@@ -298,7 +269,24 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
-        //ok 要測試
+        public async Task ClickAsync(CancellationToken token = default)
+        {
+            var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
+            _remoteObject = result.Object;
+
+            await FlashAsync(0.25, token);
+            await _tab.SendAsync(Cdp.Runtime.CallFunctionOn(
+                "(el) => el.click()",
+                ObjectId: _remoteObject.ObjectId,
+                Arguments: new List<Cdp.Runtime.CallArgument>
+                {
+                    new Cdp.Runtime.CallArgument(ObjectId: _remoteObject.ObjectId)
+                },
+                AwaitPromise: true,
+                UserGesture: true,
+                ReturnByValue: true), token: token);
+        }
+
         public async Task MouseClickAsync(string button = "left", int buttons = 1, int modifiers = 0, CancellationToken token = default)
         {
             var pos = await GetPositionAsync(token: token);
@@ -314,7 +302,6 @@ namespace NoDriver.Core.Runtime
             await _tab.FlashPointAsync(pos.Center.X, pos.Center.Y, token: token);
         }
 
-        //ok
         public async Task MouseMoveAsync(CancellationToken token = default)
         {
             var pos = await GetPositionAsync(token: token);
@@ -329,7 +316,6 @@ namespace NoDriver.Core.Runtime
             await _tab.MouseMoveAsync(pos.Center.X, pos.Center.Y, token: token);
         }
 
-        //ok
         public async Task MouseDragAsync(Element destElement, int steps = 1, CancellationToken token = default)
         {
             var endPos = await destElement.GetPositionAsync(token: token);
@@ -341,7 +327,6 @@ namespace NoDriver.Core.Runtime
             await MouseDragAsync(endPos.Center, false, steps, token);
         }
 
-        //ok
         public async Task MouseDragAsync((double X, double Y) destPoint, bool relative = false, int steps = 1, CancellationToken token = default)
         {
             var startPos = await GetPositionAsync(token: token);
@@ -353,57 +338,18 @@ namespace NoDriver.Core.Runtime
             await _tab.MouseDragAsync(startPos.Center, destPoint, relative, steps, token);
         }
 
-        //ok
-        public async Task ScrollIntoViewAsync(CancellationToken token = default)
-        {
-            try
-            {
-                await Tab.SendAsync(Cdp.DOM.ScrollIntoViewIfNeeded(BackendNodeId: BackendNodeId), token: token);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Could not scroll into view: {ex.Message}");
-            }
-        }
-
-        //ok
         public async Task ClearInputAsync(CancellationToken token = default)
         {
             await ApplyAsync(@"function (element) { element.value = """" } ", token: token);
         }
 
-        //ok
         public async Task SendKeysAsync(string text, CancellationToken token = default)
         {
             await ApplyAsync("(elem) => elem.focus()", token: token);
             foreach (var c in text)
-            {
                 await _tab.SendAsync(Cdp.Input.DispatchKeyEvent("char", Text: c.ToString()), token: token);
-            }
         }
 
-        //ok
-        public async Task SendFileAsync(params string[] filePaths)
-        {
-            await SendFileAsync(filePaths.ToList());
-        }
-
-        //ok 要測試
-        public async Task SendFileAsync(List<string> filePaths, CancellationToken token = default)
-        {
-            await _tab.SendAsync(Cdp.DOM.SetFileInputFiles(
-                Files: filePaths.ToList(),
-                BackendNodeId: BackendNodeId,
-                ObjectId: ObjectId), token: token);
-        }
-
-        //ok 要測試
-        public async Task FocusAsync(CancellationToken token = default)
-        {
-            await ApplyAsync("(element) => element.focus()", token: token);
-        }
-
-        //ok 要測試
         public async Task SelectOptionAsync(CancellationToken token = default)
         {
             if (NodeName == "OPTION")
@@ -416,13 +362,24 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        //ok 要測試
+        public async Task SendFileAsync(params string[] filePaths)
+        {
+            await SendFileAsync(filePaths.ToList());
+        }
+
+        public async Task SendFileAsync(List<string> filePaths, CancellationToken token = default)
+        {
+            await _tab.SendAsync(Cdp.DOM.SetFileInputFiles(
+                Files: filePaths.ToList(),
+                BackendNodeId: BackendNodeId,
+                ObjectId: ObjectId), token: token);
+        }
+
         public async Task SetValueAsync(string value, CancellationToken token = default)
         {
             await _tab.SendAsync(Cdp.DOM.SetNodeValue(NodeId: NodeId, Value: value), token: token);
         }
 
-        //ok 要測試
         public async Task SetTextAsync(string value, CancellationToken token = default)
         {
             if (NodeType != 3)
@@ -440,28 +397,88 @@ namespace NoDriver.Core.Runtime
             await _tab.SendAsync(Cdp.DOM.SetNodeValue(NodeId: NodeId, Value: value), token: token);
         }
 
-        //ok 要測試
-        public async Task<string> GetHtmlAsync(CancellationToken token = default)
+        public async Task FocusAsync(CancellationToken token = default)
         {
-            var result = await _tab.SendAsync(Cdp.DOM.GetOuterHTML(BackendNodeId: BackendNodeId), token: token);
-            return result.OuterHTML;
+            await ApplyAsync("(element) => element.focus()", token: token);
         }
 
-        //ok 要測試
-        public async Task<List<Element>> QuerySelectorAllAsync(string selector, CancellationToken token = default)
+        public async Task ScrollIntoViewAsync(CancellationToken token = default)
+        {
+            try
+            {
+                await Tab.SendAsync(Cdp.DOM.ScrollIntoViewIfNeeded(BackendNodeId: BackendNodeId), token: token);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Could not scroll into view: {ex.Message}");
+            }
+        }
+
+        public async Task<IEnumerable<Element>> QuerySelectorAllAsync(string selector, CancellationToken token = default)
         {
             await UpdateAsync(token: token);
             return await _tab.QuerySelectorAllAsync(selector, this, token: token);
         }
 
-        //ok 要測試
         public async Task<Element?> QuerySelectorAsync(string selector, CancellationToken token = default)
         {
             await UpdateAsync(token: token);
             return await _tab.QuerySelectorAsync(selector, this, token: token);
         }
 
-        //ok 檢查是否正常 Tab 也有相同函數
+        private string GetScreenshotFormat(string format)
+        {
+            var f = format.ToLowerInvariant();
+            if (f == "jpg" || f == "jpeg")
+                return "jpeg";
+            if (f == "png")
+                return "png";
+            return f;
+        }
+
+        private string GetScreenshotPath(string filename, string ext)
+        {
+            if (string.IsNullOrWhiteSpace(filename) || filename == "auto")
+            {
+                if (_tab.Target == null)
+                    return "";
+
+                var uri = new Uri(_tab.Target.Url);
+                var lastPart = uri.AbsolutePath.Split('/').Last();
+                var index = lastPart.LastIndexOf('?');
+                if (index != -1)
+                    lastPart = lastPart.Substring(0, index);
+                var dtStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                var candidate = $"{uri.Host}__{lastPart}_{dtStr}";
+
+                return Path.Combine(AppContext.BaseDirectory, $"{candidate}{ext}");
+            }
+            return Path.Combine(AppContext.BaseDirectory, filename);
+        }
+
+        private async Task<byte[]> GetScreenshotDataAsync(string format, Cdp.Page.Viewport viewport, CancellationToken token)
+        {
+            var result = await _tab.SendAsync(
+                Cdp.Page.CaptureScreenshot(format, Clip: viewport, CaptureBeyondViewport: true), token: token);
+            var base64Data = result.Data;
+            if (string.IsNullOrWhiteSpace(base64Data))
+                throw new InvalidOperationException("Could not take screenshot. most possible cause is the page has not finished loading yet.");
+            return Convert.FromBase64String(base64Data);
+        }
+
+        public async Task<byte[]> CaptureScreenshotAsync(string format = "jpeg", double scale = 1, CancellationToken token = default)
+        {
+            var pos = await GetPositionAsync(token: token);
+            if (pos == null)
+                throw new InvalidOperationException("Could not determine position of element. Probably because it's not in view, or hidden.");
+
+            var viewport = pos.ToViewport(scale);
+            await _tab.WaitAsync(1, token: token);
+
+            format = GetScreenshotFormat(format);
+            return await GetScreenshotDataAsync(format, viewport, token);
+        }
+
         public async Task<string> SaveScreenshotAsync(string filename = "auto", string format = "jpeg", double scale = 1, CancellationToken token = default)
         {
             var pos = await GetPositionAsync(token: token);
@@ -471,39 +488,15 @@ namespace NoDriver.Core.Runtime
             var viewport = pos.ToViewport(scale);
             await _tab.WaitAsync(1, token: token);
 
-            var path = "";
-            if (string.IsNullOrWhiteSpace(filename) || filename == "auto")
+            format = GetScreenshotFormat(format);
+            var ext = format switch
             {
-                if (_tab.Target != null)
-                {
-                    var uri = new Uri(_tab.Target.Url);
-                    var lastPart = uri.AbsolutePath.Split('/').Last();
-                    var index = lastPart.LastIndexOf('?');
-                    if (index != -1)
-                        lastPart = lastPart.Substring(0, index);
-                    var dtStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-                    var candidate = $"{uri.Host}__{lastPart}_{dtStr}";
+                "jpeg" => ".jpg",
+                "png" => ".png",
+                _ => ""
+            };
 
-                    var ext = "";
-                    if (format.ToLowerInvariant() == "jpg" ||
-                        format.ToLowerInvariant() == "jpeg")
-                    {
-                        ext = ".jpg";
-                        format = "jpeg";
-                    }
-                    if (format.ToLowerInvariant() == "png")
-                    {
-                        ext = ".png";
-                        format = "png";
-                    }
-                    path = Path.Combine(AppContext.BaseDirectory, $"{candidate}{ext}");
-                }
-            }
-            else
-            {
-                path = Path.Combine(AppContext.BaseDirectory, filename);
-            }
-
+            var path = GetScreenshotPath(filename, ext);
             if (string.IsNullOrWhiteSpace(path))
                 throw new Exception($"Invalid filename or path: '{filename}'");
 
@@ -512,18 +505,11 @@ namespace NoDriver.Core.Runtime
                 if (!Directory.Exists(parentDir))
                     Directory.CreateDirectory(parentDir);
 
-            var result = await _tab.SendAsync(
-                Cdp.Page.CaptureScreenshot(format, Clip: viewport, CaptureBeyondViewport: true), token: token);
-            var base64Data = result.Data;
-            if (string.IsNullOrWhiteSpace(base64Data))
-                throw new InvalidOperationException("Could not take screenshot. most possible cause is the page has not finished loading yet.");
-
-            var dataBytes = Convert.FromBase64String(base64Data);
-            await File.WriteAllBytesAsync(path, dataBytes, token);
+            var bytes = await GetScreenshotDataAsync(format, viewport, token);
+            await File.WriteAllBytesAsync(path, bytes, token);
             return path;
         }
 
-        //ok
         public async Task FlashAsync(double duration = 0.5, CancellationToken token = default)
         {
             if (_remoteObject == null)
@@ -556,7 +542,7 @@ namespace NoDriver.Core.Runtime
             var style =
                 $$"""
                     position:absolute;z-index:99999999;padding:0;margin:0;
-                    left:{{pos.Center.X}}px; top: {{pos.Center.Y}}px;
+                    left:{{pos.Center.X - 8}}px; top: {{pos.Center.Y - 8}}px;
                     opacity:1;
                     width:16px;height:16px;border-radius:50%;background:red;
                     animation:show-pointer-ani {{duration}}s ease 1;
@@ -572,7 +558,7 @@ namespace NoDriver.Core.Runtime
                                   0% { opacity: 1; transform: scale(2, 2);}
                                   25% { transform: scale(5,5) }
                                   50% { transform: scale(3, 3);}
-                                  75%: { transform: scale(2,2) }
+                                  75% { transform: scale(2,2) }
                                   100% { transform: scale(1, 1); opacity: 0;}
                             }`,css.cssRules.length);
                             break;
@@ -600,7 +586,6 @@ namespace NoDriver.Core.Runtime
                 UserGesture: true), token: token);
         }
 
-        //ok 要測試
         public async Task HighlightOverlayAsync(CancellationToken token = default)
         {
             if (_isHighlighted)
@@ -695,7 +680,6 @@ namespace NoDriver.Core.Runtime
             return remoteObj?.Value?.GetValue<bool>() ?? false;
         }
 
-        //ok
         private void MakeAttrs()
         {
             if (_node.Attributes != null)
