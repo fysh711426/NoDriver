@@ -1380,12 +1380,14 @@ namespace NoDriver.Core.Runtime
 
         public async Task MouseMoveAsync(double x, double y, int steps = 10, bool flash = false, CancellationToken token = default)
         {
-            steps = steps < 1 ? 1 : steps;
+            steps = Math.Max(1, steps);
             if (steps > 1)
             {
-                var stepSizeX = Math.Floor(x / steps);
-                var stepSizeY = Math.Floor(y / steps);
-                for (var i = 0; i <= steps; i++)
+                //var stepSizeX = Math.Floor(x / steps);
+                //var stepSizeY = Math.Floor(y / steps);
+                var stepSizeX = x / steps;
+                var stepSizeY = y / steps;
+                for (var i = 0; i < steps + 1; i++)
                 {
                     var currentX = stepSizeX * i;
                     var currentY = stepSizeY * i;

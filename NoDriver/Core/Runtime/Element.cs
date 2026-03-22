@@ -156,7 +156,6 @@ namespace NoDriver.Core.Runtime
                 await Tab.SendAsync(Cdp.DOM.RemoveNode(NodeId: node.NodeId), token: token);
         }
 
-        //ok
         public async Task<Element> UpdateAsync(Cdp.DOM.Node? node = null, CancellationToken token = default)
         {
             var doc = node;
@@ -610,7 +609,6 @@ namespace NoDriver.Core.Runtime
             _isHighlighted = true;
         }
 
-        //ok 要測試
         public async Task RecordVideoAsync(string? filename = null, string? folder = null, double? duration = null, CancellationToken token = default)
         {
             if (NodeName != "VIDEO")
@@ -673,7 +671,6 @@ namespace NoDriver.Core.Runtime
             await _tab.WaitAsync(token: token);
         }
 
-        //ok 要檢查 value 是不是有正確轉換
         public async Task<bool> IsRecordingAsync(CancellationToken token = default)
         {
             var (remoteObj, exception) = await ApplyAsync(@"(vid) => vid[""_recording""]", token: token);

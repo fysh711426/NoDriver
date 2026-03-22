@@ -611,6 +611,7 @@ namespace Test
         [TestMethod]
         public void Equals_And_ToString_ShouldWorkCorrectly()
         {
+            // Act & Assert
             var sameTab = _browser!.MainTab;
             Assert.IsTrue(_tab!.Equals(sameTab));
             Assert.IsTrue(_tab == sameTab);
