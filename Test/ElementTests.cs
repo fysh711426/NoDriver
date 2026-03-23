@@ -1,5 +1,4 @@
 ﻿using NoDriver.Core.Runtime;
-using Cdp = NoDriver.Cdp;
 
 namespace Test
 {

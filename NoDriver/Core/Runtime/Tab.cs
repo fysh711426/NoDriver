@@ -1133,6 +1133,14 @@ namespace NoDriver.Core.Runtime
             return Convert.FromBase64String(base64Data);
         }
 
+        /// <summary>
+        /// Saves a screenshot of the page.<br/>
+        /// This is not the same as `Element.SaveScreenshotAsync`, which saves a screenshot of a single element only.
+        /// </summary>
+        /// <param name="format">jpeg or png (defaults to jpeg)</param>
+        /// <param name="fullPage">When false (default) it captures the current viewport. when true, it captures the entire page.</param>
+        /// <param name="token"></param>
+        /// <returns>The path/filename of saved screenshot.</returns>
         public async Task<byte[]> CaptureScreenshotAsync(string format = "jpeg", bool fullPage = false, CancellationToken token = default)
         {
             await WaitAsync(1, token: token);

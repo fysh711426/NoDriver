@@ -71,6 +71,9 @@ namespace NoDriver.Core.Runtime
             set => _tree = value;
         }
         public ConcurrentDictionary<string, string> Attrs => _attrs;
+        /// <summary>
+        /// Get the parent element (node) of current element(node)
+        /// </summary>
         public Element? Parent
         {
             get
@@ -83,6 +86,10 @@ namespace NoDriver.Core.Runtime
                 return null;
             }
         }
+        /// <summary>
+        /// Returns the elements' children. those children also have a children property<br/>
+        /// so you can browse through the entire tree as well.
+        /// </summary>
         public IEnumerable<Element> Children
         {
             get
@@ -106,6 +113,10 @@ namespace NoDriver.Core.Runtime
         }
         public Cdp.Runtime.RemoteObject? RemoteObject => _remoteObject;
         public Cdp.Runtime.RemoteObjectId? ObjectId => RemoteObject?.ObjectId;
+        /// <summary>
+        /// Gets the text contents of this element.<br/>
+        /// note: this includes text in the form of script content, as those are also just 'text nodes'
+        /// </summary>
         public string Text
         {
             get
@@ -114,6 +125,10 @@ namespace NoDriver.Core.Runtime
                 return textNode?.NodeValue ?? "";
             }
         }
+        /// <summary>
+        /// Gets the text contents of this element, and it's children in a concatenated string.<br/>
+        /// note: this includes text in the form of script content, as those are also just 'text nodes'
+        /// </summary>
         public string TextAll
         {
             get
@@ -123,6 +138,14 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Represents an (HTML) DOM Element
+        /// </summary>
+        /// <param name="node">Cdp dom node representation.</param>
+        /// <param name="tab">The target object to which this element belongs.</param>
+        /// <param name="tree">The full node tree to which &lt;node&gt; belongs, enhances performance.<br/>
+        /// When not provided, you need to call `await elem.UpdateAsync()` before using .Children / .Parent</param>
+        /// <exception cref="ArgumentException"></exception>
         public Element(Cdp.DOM.Node node, Tab tab, Cdp.DOM.Node? tree = null)
         {
             if (node == null)
@@ -140,6 +163,11 @@ namespace NoDriver.Core.Runtime
             return result.OuterHTML;
         }
 
+        /// <summary>
+        /// Saves element to dom.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task SaveToDomAsync(CancellationToken token = default)
         {
             var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
@@ -148,6 +176,11 @@ namespace NoDriver.Core.Runtime
             await UpdateAsync(token: token);
         }
 
+        /// <summary>
+        /// Removes the element from dom.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task RemoveFromDomAsync(CancellationToken token = default)
         {
             await UpdateAsync(token: token);
@@ -156,6 +189,27 @@ namespace NoDriver.Core.Runtime
                 await Tab.SendAsync(Cdp.DOM.RemoveNode(NodeId: node.NodeId), token: token);
         }
 
+        /// <summary>
+        /// Updates element to retrieve more properties. for example this enables<br/>
+        /// `Children` and `Parent` attributes.<br/>
+        /// <br/>
+        /// Also resolves js opbject which is stored object in `RemoteObject`<br/>
+        /// <br/>
+        /// Usually you will get element nodes by the usage of<br/>
+        /// <br/>
+        /// `Tab.QuerySelectorAllAsync()`<br/>
+        /// `Tab.FindElementsByTextAsync()`<br/>
+        /// <br/>
+        /// Those elements are already updated and you can browse through children directly.<br/>
+        /// <br/>
+        /// The reason for a seperate call instead of doing it at initialization,<br/>
+        /// is because when you are retrieving 100+ elements this becomes quite expensive.<br/>
+        /// <br/>
+        /// Therefore, it is not advised to call this method on a bunch of blocks (100+) at the same time.
+        /// </summary>
+        /// <param name="node"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<Element> UpdateAsync(Cdp.DOM.Node? node = null, CancellationToken token = default)
         {
             var doc = node;
@@ -203,11 +257,30 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
+        /// <summary>
+        /// Calling the element object will call a js method on the object.<br/>
+        /// eg, element.CallAsync("play") in case of a video element, it will call .play()
+        /// </summary>
+        /// <param name="jsMethod"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> CallAsync(string jsMethod, CancellationToken token = default)
         {
             return await ApplyAsync($"(e) => e['{jsMethod}']()", token: token);
         }
 
+        /// <summary>
+        /// Apply javascript to this element. the given jsFunction string should accept the js element as parameter,<br/>
+        /// and can be a arrow function, or function declaration.<br/>
+        /// eg:<br/>
+        ///     - '(elem) => { elem.value = "blabla"; consolelog(elem); alert(JSON.stringify(elem); } '<br/>
+        ///     - 'elem => elem.play()'<br/>
+        ///     - function myFunction(elem) { alert(elem) }
+        /// </summary>
+        /// <param name="jsFunction">The js function definition which received this element.</param>
+        /// <param name="returnByValue"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<(Cdp.Runtime.RemoteObject remoteObject, Cdp.Runtime.ExceptionDetails? exception)> ApplyAsync(string jsFunction, bool returnByValue = true, CancellationToken token = default)
         {
             var resolveResult = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
@@ -268,6 +341,11 @@ namespace NoDriver.Core.Runtime
             return null;
         }
 
+        /// <summary>
+        /// Click the element.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task ClickAsync(CancellationToken token = default)
         {
             var result = await _tab.SendAsync(Cdp.DOM.ResolveNode(BackendNodeId: BackendNodeId), token: token);
@@ -286,6 +364,15 @@ namespace NoDriver.Core.Runtime
                 ReturnByValue: true), token: token);
         }
 
+        /// <summary>
+        /// Native click (on element). note: this likely does not work atm, use ClickAsync() instead.
+        /// </summary>
+        /// <param name="button"></param>
+        /// <param name="buttons"></param>
+        /// <param name="modifiers">Bit field representing pressed modifier keys.<br/>
+        /// Alt=1, Ctrl=2, Meta/Command=4, Shift=8 (default: 0).</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task MouseClickAsync(string button = "left", int buttons = 1, int modifiers = 0, CancellationToken token = default)
         {
             var pos = await GetPositionAsync(token: token);
@@ -301,6 +388,12 @@ namespace NoDriver.Core.Runtime
             await _tab.FlashPointAsync(pos.Center.X, pos.Center.Y, token: token);
         }
 
+        /// <summary>
+        /// Moves mouse (not click), to element position. when an element has an<br/>
+        /// hover/mouseover effect, this would trigger it.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task MouseMoveAsync(CancellationToken token = default)
         {
             var pos = await GetPositionAsync(token: token);
@@ -315,6 +408,15 @@ namespace NoDriver.Core.Runtime
             await _tab.MouseMoveAsync(pos.Center.X, pos.Center.Y, token: token);
         }
 
+        /// <summary>
+        /// Drag an element to another element or target coordinates. dragging of elements should be supported  by the site of course.
+        /// </summary>
+        /// <param name="destElement">Another element where to drag to.</param>
+        /// <param name="steps">move in &lt;steps&gt; points, this could make it look more "natural" (default 1),<br/>
+        /// but also a lot slower.<br/>
+        /// for very smooth action use 50-100</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task MouseDragAsync(Element destElement, int steps = 1, CancellationToken token = default)
         {
             var endPos = await destElement.GetPositionAsync(token: token);
@@ -326,6 +428,16 @@ namespace NoDriver.Core.Runtime
             await MouseDragAsync(endPos.Center, false, steps, token);
         }
 
+        /// <summary>
+        /// Drag an element to another element or target coordinates. dragging of elements should be supported  by the site of course.
+        /// </summary>
+        /// <param name="destPoint">A tuple (x,y) of ints representing coordinate.</param>
+        /// <param name="relative">When True, treats coordinate as relative. for example (-100, 200) will move left 100px and down 200px</param>
+        /// <param name="steps">move in &lt;steps&gt; points, this could make it look more "natural" (default 1),<br/>
+        /// but also a lot slower.<br/>
+        /// for very smooth action use 50-100</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task MouseDragAsync((double X, double Y) destPoint, bool relative = false, int steps = 1, CancellationToken token = default)
         {
             var startPos = await GetPositionAsync(token: token);
@@ -337,11 +449,25 @@ namespace NoDriver.Core.Runtime
             await _tab.MouseDragAsync(startPos.Center, destPoint, relative, steps, token);
         }
 
+        /// <summary>
+        /// Clears an input field.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task ClearInputAsync(CancellationToken token = default)
         {
             await ApplyAsync(@"function (element) { element.value = """" } ", token: token);
         }
 
+        /// <summary>
+        /// Send text to an input field, or any other html element.<br/>
+        /// <br/>
+        /// hint, if you ever get stuck where using `ClickAsync`<br/>
+        /// does not work, sending the keystroke \n or \r\n or a spacebar work wonders!
+        /// </summary>
+        /// <param name="text">Text to send.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task SendKeysAsync(string text, CancellationToken token = default)
         {
             await ApplyAsync("(elem) => elem.focus()", token: token);
@@ -349,6 +475,15 @@ namespace NoDriver.Core.Runtime
                 await _tab.SendAsync(Cdp.Input.DispatchKeyEvent("char", Text: c.ToString()), token: token);
         }
 
+        /// <summary>
+        /// For form (select) fields. when you have queried the options you can call this method on the option object.<br/>
+        /// 02/08/2024: fixed the problem where events are not fired when programattically selecting an option.<br/>
+        /// <br/>
+        /// Calling `option.SelectOptionAsync()` will use that option as selected value.<br/>
+        /// Does not work in all cases.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task SelectOptionAsync(CancellationToken token = default)
         {
             if (NodeName == "OPTION")
@@ -361,11 +496,33 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Some form input require a file (upload), a full path needs to be provided.<br/>
+        /// This method sends 1 or more file(s) to the input field.<br/>
+        /// <br/>
+        /// Needles to say, but make sure the field accepts multiple files if you want to send more files.<br/>
+        /// Otherwise the browser might crash.<br/>
+        /// <br/>
+        /// example:<br/>
+        /// `await fileinputElement.SendFileAsync("c:/temp/image.png", "c:/users/myuser/lol.gif")`
+        /// </summary>
+        /// <param name="filePaths"></param>
+        /// <returns></returns>
         public async Task SendFileAsync(params string[] filePaths)
         {
             await SendFileAsync(filePaths.ToList());
         }
 
+        /// <summary>
+        /// Some form input require a file (upload), a full path needs to be provided.<br/>
+        /// This method sends 1 or more file(s) to the input field.<br/>
+        /// <br/>
+        /// Needles to say, but make sure the field accepts multiple files if you want to send more files.<br/>
+        /// Otherwise the browser might crash.
+        /// </summary>
+        /// <param name="filePaths"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task SendFileAsync(List<string> filePaths, CancellationToken token = default)
         {
             await _tab.SendAsync(Cdp.DOM.SetFileInputFiles(
@@ -396,11 +553,21 @@ namespace NoDriver.Core.Runtime
             await _tab.SendAsync(Cdp.DOM.SetNodeValue(NodeId: NodeId, Value: value), token: token);
         }
 
+        /// <summary>
+        /// Focus the current element. often useful in form (select) fields.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task FocusAsync(CancellationToken token = default)
         {
             await ApplyAsync("(element) => element.focus()", token: token);
         }
 
+        /// <summary>
+        /// Scrolls element into view.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task ScrollIntoViewAsync(CancellationToken token = default)
         {
             try
@@ -413,12 +580,24 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Like js querySelectorAll()
+        /// </summary>
+        /// <param name="selector"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<IEnumerable<Element>> QuerySelectorAllAsync(string selector, CancellationToken token = default)
         {
             await UpdateAsync(token: token);
             return await _tab.QuerySelectorAllAsync(selector, this, token: token);
         }
 
+        /// <summary>
+        /// Like js querySelector()
+        /// </summary>
+        /// <param name="selector"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task<Element?> QuerySelectorAsync(string selector, CancellationToken token = default)
         {
             await UpdateAsync(token: token);
@@ -455,6 +634,17 @@ namespace NoDriver.Core.Runtime
             return Path.Combine(AppContext.BaseDirectory, filename);
         }
 
+        /// <summary>
+        /// Saves a screenshot of this element (only)<br/>
+        /// This is not the same as `Tab.SaveScreenshotAsync`, which saves a "regular" screenshot.<br/>
+        /// <br/>
+        /// When the element is hidden, or has no size, or is otherwise not capturable, a RuntimeError is raised.
+        /// </summary>
+        /// <param name="format">jpeg or png (defaults to jpeg)</param>
+        /// <param name="viewport">The scale of the screenshot, eg: 1 = size as is, 2 = double, 0.5 is half.</param>
+        /// <param name="token"></param>
+        /// <returns>The path/filename of saved screenshot.</returns>
+        /// <exception cref="InvalidOperationException"></exception>
         private async Task<byte[]> GetScreenshotDataAsync(string format, Cdp.Page.Viewport viewport, CancellationToken token)
         {
             var result = await _tab.SendAsync(
@@ -478,6 +668,19 @@ namespace NoDriver.Core.Runtime
             return await GetScreenshotDataAsync(format, viewport, token);
         }
 
+        /// <summary>
+        /// Saves a screenshot of this element (only)<br/>
+        /// This is not the same as `Tab.SaveScreenshotAsync`, which saves a "regular" screenshot.<br/>
+        /// <br/>
+        /// When the element is hidden, or has no size, or is otherwise not capturable, a RuntimeError is raised.
+        /// </summary>
+        /// <param name="filename">Uses this as the save path.</param>
+        /// <param name="format">jpeg or png (defaults to jpeg)</param>
+        /// <param name="scale">The scale of the screenshot, eg: 1 = size as is, 2 = double, 0.5 is half.</param>
+        /// <param name="token"></param>
+        /// <returns>The path/filename of saved screenshot.</returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        /// <exception cref="Exception"></exception>
         public async Task<string> SaveScreenshotAsync(string filename = "auto", string format = "jpeg", double scale = 1, CancellationToken token = default)
         {
             var pos = await GetPositionAsync(token: token);
@@ -509,6 +712,12 @@ namespace NoDriver.Core.Runtime
             return path;
         }
 
+        /// <summary>
+        /// Displays for a short time a red dot on the element (only if the element itself is visible)
+        /// </summary>
+        /// <param name="duration"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task FlashAsync(double duration = 0.5, CancellationToken token = default)
         {
             if (_remoteObject == null)
@@ -585,6 +794,12 @@ namespace NoDriver.Core.Runtime
                 UserGesture: true), token: token);
         }
 
+        /// <summary>
+        /// Highlights the element devtools-style. To remove the highlight,<br/>
+        /// call the method again.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task HighlightOverlayAsync(CancellationToken token = default)
         {
             if (_isHighlighted)
@@ -609,6 +824,25 @@ namespace NoDriver.Core.Runtime
             _isHighlighted = true;
         }
 
+        /// <summary>
+        /// Experimental option.<br/>
+        /// <br/>
+        /// On html5 video nodes, you can call this method to start recording of the video.<br/>
+        /// <br/>
+        /// When any of the follow happens:<br/>
+        /// <br/>
+        /// - video ends<br/>
+        /// - calling videoelement('pause')<br/>
+        /// - video stops<br/>
+        /// <br/>
+        /// The video recorded will be downloaded.
+        /// </summary>
+        /// <param name="filename">The desired filename.</param>
+        /// <param name="folder">The download folder path.</param>
+        /// <param name="duration">Record for this many seconds and then download.</param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
         public async Task RecordVideoAsync(string? filename = null, string? folder = null, double? duration = null, CancellationToken token = default)
         {
             if (NodeName != "VIDEO")
