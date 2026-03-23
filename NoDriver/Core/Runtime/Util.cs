@@ -7,7 +7,6 @@ namespace NoDriver.Core.Runtime
 {
     public static class Util
     {
-        //ok
         public static int FreePort()
         {
             var socket = new Socket(
@@ -27,103 +26,6 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        //ok
-        public static IEnumerable<Cdp.DOM.Node> FilterRecurseAll(Cdp.DOM.Node doc, Func<Cdp.DOM.Node, bool> predicate)
-        {
-            if (doc?.Children != null)
-            {
-                foreach (var child in doc.Children)
-                {
-                    if (predicate(child))
-                        yield return child;
-
-                    if (child.ShadowRoots?.Count > 0)
-                        foreach (var node in FilterRecurseAll(child.ShadowRoots[0], predicate))
-                            yield return node;
-
-                    foreach (var node in FilterRecurseAll(child, predicate))
-                        yield return node;
-                }
-            }
-        }
-
-        //ok
-        public static Cdp.DOM.Node? FilterRecurse(Cdp.DOM.Node? doc, Func<Cdp.DOM.Node, bool> predicate)
-        {
-            if (doc?.Children != null)
-            {
-                foreach (var child in doc.Children)
-                {
-                    if (predicate(child))
-                        return child;
-
-                    if (child.ShadowRoots?.Count > 0)
-                    {
-                        var shadowRootResult = FilterRecurse(child.ShadowRoots[0], predicate);
-                        if (shadowRootResult != null)
-                            return shadowRootResult;
-                    }
-
-                    var result = FilterRecurse(child, predicate);
-                    if (result != null)
-                        return result;
-                }
-            }
-            return null;
-        }
-
-        //ok
-        public static IEnumerable<Cdp.Page.Frame> FlattenFrameTree(Cdp.Page.FrameTree tree)
-        {
-            yield return tree.Frame;
-            if (tree.ChildFrames != null)
-            {
-                foreach (var child in tree.ChildFrames)
-                {
-                    foreach (var flatten in FlattenFrameTree(child))
-                    {
-                        yield return flatten;
-                    }
-                }
-            }
-        }
-
-        //ok
-        public static IEnumerable<Cdp.Page.Frame> FlattenFrameTree(Cdp.Page.FrameResourceTree tree)
-        {
-            yield return tree.Frame;
-            if (tree.ChildFrames != null)
-            {
-                foreach (var child in tree.ChildFrames)
-                {
-                    foreach (var flatten in FlattenFrameTree(child))
-                    {
-                        yield return flatten;
-                    }
-                }
-            }
-        }
-
-        //ok
-        public static IEnumerable<(Cdp.Page.Frame frame, Cdp.Page.FrameResource resource)> FlattenFrameTreeResources(Cdp.Page.FrameResourceTree tree)
-        {
-            foreach (var res in tree.Resources)
-            {
-                yield return (tree.Frame, res);
-            }
-            if (tree.ChildFrames != null)
-            {
-                foreach (var child in tree.ChildFrames)
-                {
-                    foreach (var flatten in FlattenFrameTreeResources(child))
-                    {
-                        yield return flatten;
-                    }
-                }
-            }
-        }
-
-        //ok
         public static IEnumerable<(double X, double Y)> Circle(int x, int? y = null, int radius = 10, int num = 10, int dir = 0)
         {
             var r = radius;
@@ -153,7 +55,97 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        //ok 要測試
+        public static IEnumerable<Cdp.DOM.Node> FilterRecurseAll(Cdp.DOM.Node doc, Func<Cdp.DOM.Node, bool> predicate)
+        {
+            if (doc?.Children != null)
+            {
+                foreach (var child in doc.Children)
+                {
+                    if (predicate(child))
+                        yield return child;
+
+                    if (child.ShadowRoots?.Count > 0)
+                        foreach (var node in FilterRecurseAll(child.ShadowRoots[0], predicate))
+                            yield return node;
+
+                    foreach (var node in FilterRecurseAll(child, predicate))
+                        yield return node;
+                }
+            }
+        }
+
+        public static Cdp.DOM.Node? FilterRecurse(Cdp.DOM.Node? doc, Func<Cdp.DOM.Node, bool> predicate)
+        {
+            if (doc?.Children != null)
+            {
+                foreach (var child in doc.Children)
+                {
+                    if (predicate(child))
+                        return child;
+
+                    if (child.ShadowRoots?.Count > 0)
+                    {
+                        var shadowRootResult = FilterRecurse(child.ShadowRoots[0], predicate);
+                        if (shadowRootResult != null)
+                            return shadowRootResult;
+                    }
+
+                    var result = FilterRecurse(child, predicate);
+                    if (result != null)
+                        return result;
+                }
+            }
+            return null;
+        }
+
+        public static IEnumerable<Cdp.Page.Frame> FlattenFrameTree(Cdp.Page.FrameTree tree)
+        {
+            yield return tree.Frame;
+            if (tree.ChildFrames != null)
+            {
+                foreach (var child in tree.ChildFrames)
+                {
+                    foreach (var flatten in FlattenFrameTree(child))
+                    {
+                        yield return flatten;
+                    }
+                }
+            }
+        }
+
+        public static IEnumerable<Cdp.Page.Frame> FlattenFrameTree(Cdp.Page.FrameResourceTree tree)
+        {
+            yield return tree.Frame;
+            if (tree.ChildFrames != null)
+            {
+                foreach (var child in tree.ChildFrames)
+                {
+                    foreach (var flatten in FlattenFrameTree(child))
+                    {
+                        yield return flatten;
+                    }
+                }
+            }
+        }
+
+        public static IEnumerable<(Cdp.Page.Frame Frame, Cdp.Page.FrameResource Resource)> FlattenFrameTreeResources(Cdp.Page.FrameResourceTree tree)
+        {
+            foreach (var res in tree.Resources)
+            {
+                yield return (tree.Frame, res);
+            }
+            if (tree.ChildFrames != null)
+            {
+                foreach (var child in tree.ChildFrames)
+                {
+                    foreach (var flatten in FlattenFrameTreeResources(child))
+                    {
+                        yield return flatten;
+                    }
+                }
+            }
+        }
+
         public static async Task<string> HtmlFromTreeAsync(Element tree, Tab target, CancellationToken token = default)
         {
             var @out = new StringBuilder();
@@ -162,13 +154,12 @@ namespace NoDriver.Core.Runtime
                 foreach (var child in tree.Children)
                 {
                     @out.Append(await child.GetHtmlAsync(token));
-                    @out.Append(await HtmlFromTreeAsync(child, target, token));
+                    //@out.Append(await HtmlFromTreeAsync(child, target, token));
                 }
             }
             return @out.ToString();
         }
 
-        //ok 要測試
         public static async Task<string> HtmlFromTreeAsync(Cdp.DOM.Node tree, Tab target, CancellationToken token = default)
         {
             var @out = new StringBuilder();
@@ -179,13 +170,12 @@ namespace NoDriver.Core.Runtime
                     var result = await target.SendAsync(
                         Cdp.DOM.GetOuterHTML(BackendNodeId: child.BackendNodeId), token: token);
                     @out.Append(result.OuterHTML);
-                    @out.Append(await HtmlFromTreeAsync(child, target, token));
+                    //@out.Append(await HtmlFromTreeAsync(child, target, token));
                 }
             }
             return @out.ToString();
         }
 
-        //ok 要測試
         private static readonly PropertyInfo[] _targetInfoProps =
             typeof(Cdp.Target.TargetInfo).GetProperties(BindingFlags.Public | BindingFlags.Instance);
         public static IEnumerable<(string Key, object Old, object New)> CompareTargetInfo(Cdp.Target.TargetInfo? info1, Cdp.Target.TargetInfo? info2)

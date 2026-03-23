@@ -1349,8 +1349,8 @@ namespace NoDriver.Core.Runtime
             var flatResources = Util.FlattenFrameTreeResources(tree);
 
             return flatResources
-                .Where(it => !string.IsNullOrWhiteSpace(it.resource?.Url))
-                .Select(it => it.resource.Url)
+                .Where(it => !string.IsNullOrWhiteSpace(it.Resource?.Url))
+                .Select(it => it.Resource.Url)
                 .ToList();
         }
 
@@ -1367,8 +1367,8 @@ namespace NoDriver.Core.Runtime
                 var results = new Dictionary<string, List<Cdp.Debugger.SearchMatch>>();
                 foreach (var item in listOfTuples)
                 {
-                    var frame = item.frame;
-                    var resource = item.resource;
+                    var frame = item.Frame;
+                    var resource = item.Resource;
 
                     if (frame == null || resource == null)
                         continue;

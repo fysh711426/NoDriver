@@ -696,7 +696,7 @@ namespace Test
         {
             // Arrange: 準備一個非常長的頁面，並將元素放在遠端
             // 我們動態修改 body 高度，並把一個 div 放在 2000px 的位置
-            var s = await _tab!.EvaluateAsync(@"
+            await _tab!.EvaluateAsync(@"
                 (function() {
                     document.body.style.height = '3000px';
                     const spacer = document.createElement('div');
