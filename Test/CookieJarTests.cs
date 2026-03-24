@@ -60,6 +60,31 @@ namespace Test
         }
 
         [TestMethod]
+        public async Task GetAllAsHttpCookiesAsync_ShouldHandleDoubleExpires()
+        {
+            // Arrange
+            var now = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
+            var unixTime = (double)now.ToUnixTimeSeconds();
+            var cookieParam = new Cdp.Network.CookieParam
+            (
+                Name: "test",
+                Value: "value",
+                Domain: "example.com",
+                Expires: new Cdp.Network.TimeSinceEpoch(unixTime)
+            );
+
+            // Act
+            await _cookies!.SetAllAsync(new List<Cdp.Network.CookieParam> { cookieParam });
+            var result = await _cookies.GetAllAsHttpCookiesAsync();
+
+            // Assert
+            Assert.AreEqual(now.Year, result.First().Expires.Year, "年份轉換錯誤");
+            Assert.AreEqual(now.Month, result.First().Expires.Month, "月份轉換錯誤");
+            Assert.AreEqual(now.Date, result.First().Expires.Date, "日期轉換錯誤");
+            Assert.AreEqual(DateTimeKind.Utc, result.First().Expires.Kind, "過期時間應強制設定為 UTC");
+        }
+
+        [TestMethod]
         public async Task ClearAsync_ShouldRemoveAllCookies()
         {
             // Arrange

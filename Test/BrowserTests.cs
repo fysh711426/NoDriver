@@ -32,7 +32,7 @@ namespace Test
         public void CreateAsync_And_StartAsync_ShouldInitializeBrowserSuccessfully()
         {
             // Assert: 確認啟動後的狀態
-            Assert.IsNotNull(_browser);
+            Assert.IsNotNull(_browser, "瀏覽器不應為 null");
             Assert.IsFalse(_browser.Stopped, "瀏覽器不應該是停止狀態");
             Assert.IsFalse(string.IsNullOrWhiteSpace(_browser.WebSocketUrl), "WebSocketUrl 不應為空");
             Assert.IsNotNull(_browser.Info, "瀏覽器 Info 不應為 null");
@@ -64,7 +64,6 @@ namespace Test
         }
 
         [TestMethod]
-
         public async Task GetAsync_NewTab_ShouldIncreaseTabCount()
         {
             // Arrange

@@ -7,6 +7,11 @@ namespace NoDriver.Core.Runtime
 {
     public static class Util
     {
+        /// <summary>
+        /// Determines a free port using sockets.
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
         public static int FreePort()
         {
             var socket = new Socket(
@@ -26,6 +31,15 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// A generator will calculate coordinates around a circle.
+        /// </summary>
+        /// <param name="x">Start x position.</param>
+        /// <param name="y">Start y position.</param>
+        /// <param name="radius">Size of the circle.</param>
+        /// <param name="num">The amount of points calculated (higher =&gt; slower, more cpu, but more detailed)</param>
+        /// <param name="dir"></param>
+        /// <returns></returns>
         public static IEnumerable<(double X, double Y)> Circle(int x, int? y = null, int radius = 10, int num = 10, int dir = 0)
         {
             var r = radius;
@@ -55,6 +69,12 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Test each child using predicate(child), and return all children for which predicate(child) == true
+        /// </summary>
+        /// <param name="doc"></param>
+        /// <param name="predicate">A function which takes a node as first parameter and returns a boolean, where True means include.</param>
+        /// <returns></returns>
         public static IEnumerable<Cdp.DOM.Node> FilterRecurseAll(Cdp.DOM.Node doc, Func<Cdp.DOM.Node, bool> predicate)
         {
             if (doc?.Children != null)
@@ -74,6 +94,12 @@ namespace NoDriver.Core.Runtime
             }
         }
 
+        /// <summary>
+        /// Test each child using predicate(child), and return the first child of which predicate(child) == true
+        /// </summary>
+        /// <param name="doc"></param>
+        /// <param name="predicate">A function which takes a node as first parameter and returns a boolean, where True means include.</param>
+        /// <returns></returns>
         public static Cdp.DOM.Node? FilterRecurse(Cdp.DOM.Node? doc, Func<Cdp.DOM.Node, bool> predicate)
         {
             if (doc?.Children != null)
