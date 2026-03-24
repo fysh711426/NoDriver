@@ -35,11 +35,12 @@ namespace NoDriver.Core.Runtime
     {
         private readonly ConcurrentList<Tab> _targets = new();
         private readonly ConcurrentList<ProxyForwarder> _proxyForwarders = new();
-
+        
         private Process? _process = null;
         private int? _processPid = null;
         private HTTPApi? _http = null;
-        private CookieJar? _cookies = null;
+
+        private Lazy<CookieJar> _cookies;
 
         public Config? Config { get; private set; } = null;
         public Connection? Connection { get; private set; } = null;
@@ -68,20 +69,13 @@ namespace NoDriver.Core.Runtime
         /// </summary>
         public List<Tab> Tabs => _targets.Where(it => it.Target?.Type == "page");
 
-        public CookieJar Cookies
-        {
-            get
-            {
-                if (_cookies == null)
-                    _cookies = new(this);
-                return _cookies;
-            }
-        }
+        public CookieJar Cookies => _cookies.Value;
 
         public bool Stopped => _process == null || _process.HasExited;
 
         private Browser()
         {
+            _cookies = new(() => new CookieJar(this));
         }
 
         /// <summary>
