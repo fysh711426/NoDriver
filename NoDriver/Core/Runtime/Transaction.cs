@@ -47,9 +47,9 @@ namespace NoDriver.Core.Runtime
 
             var status = "";
             if (isDone)
-                status = "finished";
+                status = "Finished";
             else
-                status = "pending";
+                status = "Pending";
 
             return $"<{typeof(TRawParams).Name}\n\t" +
                    $"Method: {Method}\n\t" +
