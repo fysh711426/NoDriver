@@ -133,8 +133,10 @@ namespace NoDriver.Core.Runtime
         private async Task HandleHttpRequestAsync(NetworkStream clientStream, CancellationToken token)
         {
             var MAX_LINE_LENGTH = 8192;
-            var REQUEST_TIMEOUT = 5.0;
-            var UPSTREAM_CONNECT_TIMEOUT = 30.0;
+            //var REQUEST_TIMEOUT = 5.0;
+            var REQUEST_TIMEOUT = 60.0;
+            //var UPSTREAM_CONNECT_TIMEOUT = 30.0;
+            var UPSTREAM_CONNECT_TIMEOUT = 60.0;
 
             using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token))
             {
@@ -198,10 +200,16 @@ namespace NoDriver.Core.Runtime
                                     remoteStream = sslStream;
                                 }
                             }
+                            catch (OperationCanceledException)
+                            {
+                                Console.WriteLine($"Timeout connecting to upstream proxy {FwHost}:{FwPort}");
+                                await WriteTextAsync(clientStream, "HTTP/1.1 504 Gateway Timeout\r\n\r\n", CancellationToken.None);
+                                return;
+                            }
                             catch (Exception ex)
                             {
                                 Console.WriteLine($"Failed to connect to upstream proxy: {ex.Message}");
-                                await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n\r\n", timeoutCts.Token);
+                                await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n\r\n", CancellationToken.None);
                                 return;
                             }
 
@@ -257,6 +265,7 @@ namespace NoDriver.Core.Runtime
                             }
                             catch (InvalidDataException ex)
                             {
+                                // 這裡應該要處理
                                 Console.WriteLine(ex.Message);
                             }
                         }
@@ -272,19 +281,15 @@ namespace NoDriver.Core.Runtime
                     Console.WriteLine("Client request timeout.");
                     await WriteTextAsync(clientStream, "HTTP/1.1 408 Request Timeout\r\n\r\n", CancellationToken.None);
                 }
-                catch (InvalidDataException ex)
+                catch (InvalidDataException)
                 {
-                    Console.WriteLine(ex.Message);
-                    await WriteTextAsync(clientStream, "HTTP/1.1 431 Request Header Fields Too Large\r\n\r\n", timeoutCts.Token);
+                    Console.WriteLine("Oversized header line.");
+                    await WriteTextAsync(clientStream, "HTTP/1.1 431 Request Header Fields Too Large\r\n\r\n", CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error handling HTTP proxy request: {ex.Message}");
-                    try
-                    {
-                        await WriteTextAsync(clientStream, "HTTP/1.1 500 Internal Server Error\r\n\r\n", timeoutCts.Token);
-                    }
-                    catch { }
+                    await WriteTextAsync(clientStream, "HTTP/1.1 500 Internal Server Error\r\n\r\n", CancellationToken.None);
                 }
             }
         }
@@ -473,6 +478,9 @@ namespace NoDriver.Core.Runtime
                     if (b == (byte)'\n')
                         break;
                 }
+
+                if (count == limit)
+                    throw new InvalidDataException("Header line exceeded maximum limit.");
                 return Encoding.Latin1.GetString(buffer, 0, count);
             }
             finally
@@ -508,18 +516,17 @@ namespace NoDriver.Core.Runtime
                 var task1 = stream1.CopyToAsync(stream2, cts.Token);
                 var task2 = stream2.CopyToAsync(stream1, cts.Token);
 
+                var completedTask = await Task.WhenAny(task1, task2);
+                cts.Cancel();
+
                 try
                 {
-                    var completedTask = await Task.WhenAny(task1, task2);
+                    await Task.WhenAll(task1, task2);
                 }
-                catch
+                catch (OperationCanceledException) { }
+                catch (Exception ex)
                 {
-                    cts.Cancel();
-                    try
-                    {
-                        await Task.WhenAll(task1, task2);
-                    }
-                    catch { }
+                    Console.WriteLine($"Piping error: {ex.Message}");
                 }
             }
         }

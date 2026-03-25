@@ -1,0 +1,333 @@
+﻿using NoDriver.Core.Runtime;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+
+namespace Test
+{
+    [TestClass]
+    public class ProxyForwarderTests
+    {
+        private Browser? _browser;
+
+        [TestInitialize]
+        public async Task Setup()
+        {
+            var config = new Config
+            {
+                //Headless = true,
+                AutodiscoverTargets = false
+            };
+            _browser = await Browser.CreateAsync(config);
+        }
+
+        [TestCleanup]
+        public async Task Cleanup()
+        {
+            if (_browser != null)
+                await _browser.DisposeAsync();
+        }
+
+        [TestMethod]
+        public async Task ProxyForwarder_HttpWithAuth_ShouldForwardCorrectly()
+        {
+            // Arrange
+            var user = "testuser";
+            var pass = "testpass";
+            //using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3600)))
+            {
+                // 啟動真實的微型上游 HTTP 代理伺服器
+                var (proxyPort, proxyTask) = StartDummyUpstreamProxy(user, pass, cts.Token);
+
+                // 建立 ProxyForwarder
+                var proxyString = $"http://{user}:{pass}@127.0.0.1:{proxyPort}";
+                await using (var forwarder = new ProxyForwarder(proxyString))
+                {
+                    // 建立一個 HttpClient，設定使用剛建立的 ProxyForwarder 作為本機代理
+                    var proxy = new WebProxy(forwarder.ProxyServer);
+                    using (var handler = new HttpClientHandler { Proxy = proxy, UseProxy = true })
+                    using (var client = new HttpClient(handler))
+                    {
+                        // Act
+                        // 透過 Forwarder 向隨便一個網域發出請求
+                        using (var response = await client.GetAsync("http://example.com", cts.Token))
+                        {
+                            var content = await response.Content.ReadAsStringAsync(cts.Token);
+
+                            // Assert
+                            Assert.IsTrue(response.IsSuccessStatusCode, "代理轉發請求失敗");
+                            Assert.AreEqual("<html><body>Proxy Success</body></html>", content, "代理回傳的內容與預期不符");
+                        }
+                    }
+                }
+            }
+        }
+
+        [TestMethod]
+        public async Task Browser_CreateContextAsync_WithHttpProxy_ShouldSucceed()
+        {
+            // Arrange
+            var user = "browserUser";
+            var pass = "browserPass";
+            //using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3600)))
+            {
+                // 啟動微型上游 HTTP 代理伺服器
+                var (proxyPort, proxyTask) = StartDummyUpstreamProxy(user, pass, cts.Token);
+
+                // Act
+                // 透過 Browser 的 CreateContextAsync 建立綁定代理伺服器的全新 Tab
+                var proxyString = $"http://{user}:{pass}@127.0.0.1:{proxyPort}";
+                var tab = await _browser!.CreateContextAsync(
+                    url: "http://example.com",
+                    newWindow: true,
+                    proxyServer: proxyString,
+                    token: cts.Token);
+
+                // 等待一下確保瀏覽器有發送請求
+                await Task.Delay(1000);
+
+                // Assert
+                Assert.IsNotNull(tab);
+                Assert.IsNotNull(tab.Target);
+
+                // 確認代理伺服器有成功完成任務（沒有拋出錯誤）
+                await proxyTask;
+            }
+        }
+
+        [TestMethod]
+        public async Task Browser_CreateContextAsync_WithSocks5Proxy_ShouldSucceed()
+        {
+            // Arrange
+            var user = "socksUser";
+            var pass = "socksPass";
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+
+            // 啟動微型上游 SOCKS5 代理伺服器
+            var (proxyPort, proxyTask) = await StartDummyUpstreamSocksProxy(user, pass, cts.Token);
+            var proxyString = $"socks5://{user}:{pass}@127.0.0.1:{proxyPort}";
+
+            Assert.IsNotNull(_browser);
+
+            // Act
+            // 透過 Browser 的 CreateContextAsync 建立綁定代理伺服器的全新 Tab
+            // 注意：底層會建立 ProxyForwarder 來處理帶有帳密的 SOCKS 連線
+            var tab = await _browser.CreateContextAsync(
+                url: "http://example.com",
+                newWindow: true,
+                proxyServer: proxyString,
+                token: cts.Token);
+
+            // 等待一下確保瀏覽器有發送請求並完成握手
+            await Task.Delay(1500);
+
+            // Assert
+            Assert.IsNotNull(tab);
+            Assert.IsNotNull(tab.Target);
+
+            // 確認 SOCKS 代理伺服器有成功完成任務（沒有拋出錯誤或認證失敗）
+            await proxyTask;
+        }
+
+        /// <summary>
+        /// 啟動一個微型的本機 TCP Server 扮演上游 HTTP 代理伺服器。<br/>
+        /// 它會驗證 HTTP CONNECT 請求中的 Proxy-Authorization 是否正確，<br/>
+        /// 並回傳簡單的 HTTP 200 頁面。
+        /// </summary>
+        private (int Port, Task ServerTask) StartDummyUpstreamProxy(string user, string pass, CancellationToken token)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            var task = Task.Run(async () =>
+            {
+                try
+                {
+                    using (var client = await listener.AcceptTcpClientAsync(token))
+                    using (var stream = client.GetStream())
+                    using (var reader = new StreamReader(stream, Encoding.Latin1, leaveOpen: true))
+                    using (var writer = new StreamWriter(stream, Encoding.Latin1, leaveOpen: true) { AutoFlush = true })
+                    {
+                        // 讀取 CONNECT 請求行 (例如: CONNECT example.com:80 HTTP/1.1)
+                        var line = await reader.ReadLineAsync(token);
+                        if (string.IsNullOrEmpty(line) || !line.StartsWith("CONNECT"))
+                            return;
+
+                        var hasAuth = false;
+                        var auth = Convert.ToBase64String(Encoding.Latin1.GetBytes($"{user}:{pass}"));
+
+                        // 解析 HTTP Headers 尋找認證資訊
+                        while (!string.IsNullOrWhiteSpace(line = await reader.ReadLineAsync(token)))
+                        {
+                            if (line.StartsWith("Proxy-Authorization: Basic", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var tokenStr = line.Substring("Proxy-Authorization: Basic".Length).Trim();
+                                if (tokenStr == auth)
+                                    hasAuth = true;
+                            }
+                        }
+
+                        if (!hasAuth)
+                        {
+                            // 認證失敗
+                            await writer.WriteAsync("HTTP/1.1 407 Proxy Authentication Required\r\n\r\n".AsMemory(), token);
+                            return;
+                        }
+
+                        // 認證成功：回傳 Connection Established 建立隧道
+                        await writer.WriteAsync("HTTP/1.1 200 Connection Established\r\n\r\n".AsMemory(), token);
+
+                        // 隧道建立後，瀏覽器/HttpClient 會送出實際的 GET 請求
+                        while (!string.IsNullOrWhiteSpace(line = await reader.ReadLineAsync(token)))
+                        {
+                            // 將 Header 讀完
+                        }
+
+                        // 模擬目標伺服器 (ex: example.com) 回傳假內容
+                        var body = "<html><body>Proxy Success</body></html>";
+                        var response =
+                            $"HTTP/1.1 200 OK\r\n" +
+                            $"Content-Type: text/html\r\n" +
+                            $"Content-Length: {body.Length}\r\n" +
+                            $"Connection: close\r\n\r\n" +
+                            $"{body}";
+                        await writer.WriteAsync(response.AsMemory(), token);
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Dummy Proxy Server Error: {ex.Message}");
+                    throw; // 將錯誤拋出讓測試可以捕捉到失敗
+                }
+                finally
+                {
+                    listener.Stop();
+                }
+            }, token);
+
+            return (port, task);
+        }
+
+        /// <summary>
+        /// 啟動一個微型的本機 TCP Server 扮演上游 SOCKS5 代理伺服器。
+        /// 負責驗證 SOCKS5 的 Handshake 流程與帳號密碼認證 (Method 0x02)。
+        /// </summary>
+        private (int port, Task serverTask) StartDummyUpstreamSocksProxy(string user, string pass, CancellationToken token)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            var task = Task.Run(async () =>
+            {
+                try
+                {
+                    using (var client = await listener.AcceptTcpClientAsync(token))
+                    using (var stream = client.GetStream())
+                    {
+                        // 1. Handshake (Client 傳送支援的 Methods)
+                        var header = await ReadBytesAsync(stream, 2, token);
+                        if (header[0] != 5) 
+                            throw new Exception("Not SOCKS5");
+
+                        var nMethods = header[1];
+                        await ReadBytesAsync(stream, nMethods, token);
+
+                        // 回應 Server 選擇的 Method: 0x02 (Username/Password)
+                        await stream.WriteAsync(new byte[] { 5, 2 }, 0, 2, token);
+
+                        // 2. Authentication Phase (Username/Password 驗證)
+                        var authHeader = await ReadBytesAsync(stream, 2, token); // [ver(1), ulen]
+                        var ulen = authHeader[1];
+                        var userBytes = await ReadBytesAsync(stream, ulen, token);
+                        var _user = Encoding.Latin1.GetString(userBytes);
+
+                        var passLenByte = await ReadBytesAsync(stream, 1, token);
+                        var plen = passLenByte[0];
+                        var passBytes = await ReadBytesAsync(stream, plen, token);
+                        var _pass = Encoding.Latin1.GetString(passBytes);
+
+                        if (_user != user || _pass != pass)
+                        {
+                            // 認證失敗
+                            await stream.WriteAsync(new byte[] { 1, 1 }, 0, 2, token);
+                            throw new Exception($"SOCKS Auth failed. Expected: {user}:{pass}, Got: {_user}:{_pass}");
+                        }
+
+                        // 認證成功
+                        await stream.WriteAsync(new byte[] { 1, 0 }, 0, 2, token);
+
+                        // 3. Connect Phase (Client 請求連線到目標)
+                        var reqHeader = await ReadBytesAsync(stream, 4, token); // [ver(5), cmd(1), rsv(0), atyp]
+                        var atyp = reqHeader[3];
+
+                        // 讀取目標位址與 Port (為了讓流程走完，簡單略過這段 Bytes)
+                        if (atyp == 1) 
+                            await ReadBytesAsync(stream, 6, token); // IPv4 + Port
+                        else if (atyp == 3)
+                        {
+                            var domainLen = await ReadBytesAsync(stream, 1, token);
+                            await ReadBytesAsync(stream, domainLen[0] + 2, token); // Domain + Port
+                        }
+                        else if (atyp == 4) 
+                            await ReadBytesAsync(stream, 18, token); // IPv6 + Port
+
+                        // 回傳 Connect 成功
+                        // [ver(5), rep(0: success), rsv(0), atyp(1: ipv4), bnd.addr(4 bytes 0), bnd.port(2 bytes 0)]
+                        await stream.WriteAsync(new byte[] { 5, 0, 0, 1, 0, 0, 0, 0, 0, 0 }, 0, 10, token);
+
+                        // 4. Data Phase (模擬目標網站回傳資料)
+                        using (var reader = new StreamReader(stream, Encoding.Latin1, leaveOpen: true))
+                        using (var writer = new StreamWriter(stream, Encoding.Latin1, leaveOpen: true) { AutoFlush = true })
+                        {
+                            var line = "";
+                            while (!string.IsNullOrWhiteSpace(line = await reader.ReadLineAsync(token)))
+                            {
+                                // 將 Header 讀完
+                            }
+
+                            var body = "<html><body>SOCKS5 Proxy Success</body></html>";
+                            var response = 
+                                $"HTTP/1.1 200 OK\r\n" +
+                                $"Content-Type: text/html\r\n" +
+                                $"Content-Length: {body.Length}\r\n" +
+                                $"Connection: close\r\n\r\n" +
+                                $"{body}";
+                            await writer.WriteAsync(response.AsMemory(), token);
+                        }
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Dummy SOCKS Server Error: {ex.Message}");
+                    throw; // 將錯誤拋出讓測試可以捕捉到失敗
+                }
+                finally
+                {
+                    listener.Stop();
+                }
+            }, token);
+
+            return (port, task);
+        }
+
+        // 讀取 Stream 的小幫手，確保 Bytes 被完整讀出
+        private async Task<byte[]> ReadBytesAsync(Stream stream, int size, CancellationToken token)
+        {
+            var buffer = new byte[size];
+            var count = 0;
+            while (count < size)
+            {
+                var read = await stream.ReadAsync(buffer, count, size - count, token);
+                if (read == 0) throw new EndOfStreamException("Socket connection closed unexpectedly.");
+                count += read;
+            }
+            return buffer;
+        }
+    }
+}
