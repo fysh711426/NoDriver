@@ -186,7 +186,7 @@ namespace NoDriver.Core.Runtime
 
                                 if (UseSsl)
                                 {
-                                    var sslStream = new SslStream(remoteStream, false, (sender, cert, chain, err) => true);
+                                    var sslStream = new SslStream(remoteStream, false);
                                     await sslStream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
                                     {
                                         TargetHost = FwHost,
