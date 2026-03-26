@@ -39,10 +39,9 @@ namespace Test
             // Arrange
             var user = "testuser";
             var pass = "testpass";
-            //using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
-            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3600)))
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
             {
-                // 啟動真實的微型上游 HTTP 代理伺服器
+                // 啟動微型上游 HTTP 代理伺服器
                 var (proxyPort, proxyTask) = StartDummyUpstreamProxy(user, pass, cts.Token);
 
                 // 建立 ProxyForwarder
@@ -60,13 +59,13 @@ namespace Test
                     using (var client = new HttpClient(handler))
                     {
                         // Act: 透過 Forwarder 向隨便一個網域發出請求
-                        using (var response = await client.GetAsync("https://example.com", cts.Token))
+                        using (var response = await client.GetAsync("https://example.com"))
                         {
-                            var content = await response.Content.ReadAsStringAsync(cts.Token);
+                            var html = await response.Content.ReadAsStringAsync();
 
                             // Assert
                             Assert.IsTrue(response.IsSuccessStatusCode, "代理轉發請求失敗");
-                            Assert.AreEqual("<html><body>HTTPS Proxy Success</body></html>", content, "代理回傳的內容與預期不符");
+                            Assert.AreEqual("<html><body>HTTPS Proxy Success</body></html>", html, "代理回傳的內容與預期不符");
                         }
                     }
                 }
@@ -79,27 +78,27 @@ namespace Test
             // Arrange
             var user = "browserUser";
             var pass = "browserPass";
-            //using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
-            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3600)))
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
             {
                 // 啟動微型上游 HTTP 代理伺服器
                 var (proxyPort, proxyTask) = StartDummyUpstreamProxy(user, pass, cts.Token);
 
-                // Act
-                // 透過 Browser 的 CreateContextAsync 建立綁定代理伺服器的全新 Tab
+                // Act: 透過 Browser 的 CreateContextAsync 建立 ProxyForwarder 作為本機代理
                 var proxyString = $"http://{user}:{pass}@127.0.0.1:{proxyPort}";
                 var tab = await _browser!.CreateContextAsync(
                     url: "https://example.com",
                     newWindow: true,
                     proxyServer: proxyString,
+                    proxyBypassList: ["https://www.google.com"],
                     token: cts.Token);
 
                 // 等待一下確保瀏覽器有發送請求
-                await Task.Delay(1500);
+                await tab.WaitAsync(0.5);
 
                 // Assert
-                Assert.IsNotNull(tab);
-                Assert.IsNotNull(tab.Target);
+                var root = await tab.SelectAsync("body");
+                var html = await root!.GetHtmlAsync();
+                Assert.AreEqual("<body>HTTPS Proxy Success</body>", html, "代理回傳的內容與預期不符");
 
                 // 確認代理伺服器有成功完成任務（沒有拋出錯誤）
                 await proxyTask;
