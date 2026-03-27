@@ -35,29 +35,29 @@ namespace NoDriver.Core.Runtime
             ClientCertificates = clientCertificates;
             RemoteCertificateValidationCallback = remoteCertificateValidationCallback;
 
-            if (!Uri.TryCreate(proxyServer, UriKind.Absolute, out var url) || string.IsNullOrWhiteSpace(url.Scheme))
+            if (!Uri.TryCreate(proxyServer, UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Scheme))
             {
                 if (proxyServer.Contains(":"))
                     ProxyServer = proxyServer;
                 return;
             }
 
-            Scheme = url.Scheme;
-            UseSsl = url.Scheme == "https";
+            Scheme = uri.Scheme;
+            UseSsl = uri.Scheme == "https";
 
-            if (string.IsNullOrWhiteSpace(url.UserInfo))
+            if (string.IsNullOrWhiteSpace(uri.UserInfo))
             {
-                ProxyServer = url.ToString();
+                ProxyServer = uri.ToString();
                 return;
             }
 
             Port = Util.FreePort();
             Host = "127.0.0.1";
-            FwPort = url.Port;
-            FwHost = url.Host;
+            FwPort = uri.Port;
+            FwHost = uri.Host;
             FwScheme = Scheme;
 
-            var credentials = url.UserInfo.Split(':', 2);
+            var credentials = uri.UserInfo.Split(':', 2);
             Username = credentials.Length > 0 ? Uri.UnescapeDataString(credentials[0]) : "";
             Password = credentials.Length > 1 ? Uri.UnescapeDataString(credentials[1]) : "";
 
@@ -130,13 +130,11 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        private async Task HandleHttpRequestAsync(NetworkStream clientStream, CancellationToken token)
+        private async Task HandleHttpsRequestAsync(NetworkStream clientStream, CancellationToken token)
         {
             var MAX_LINE_LENGTH = 8192;
-            //var REQUEST_TIMEOUT = 5.0;
-            var REQUEST_TIMEOUT = 60.0;
-            //var UPSTREAM_CONNECT_TIMEOUT = 30.0;
-            var UPSTREAM_CONNECT_TIMEOUT = 60.0;
+            var REQUEST_TIMEOUT = 5.0;
+            var UPSTREAM_CONNECT_TIMEOUT = 30.0;
 
             using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token))
             {
@@ -254,6 +252,199 @@ namespace NoDriver.Core.Runtime
                                 }
 
                                 await WriteTextAsync(clientStream, "HTTP/1.1 200 Connection Established\r\n\r\n", timeoutCts.Token);
+
+                                timeoutCts.CancelAfter(Timeout.Infinite);
+                                await PipeAsync(clientStream, remoteStream, timeoutCts.Token);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                Console.WriteLine("Timeout reading upstream proxy response.");
+                                await WriteTextAsync(clientStream, "HTTP/1.1 504 Gateway Timeout\r\n\r\n", CancellationToken.None);
+                            }
+                            catch (InvalidDataException ex)
+                            {
+                                // 這裡應該要處理
+                                Console.WriteLine(ex.Message);
+                            }
+                        }
+                        finally
+                        {
+                            if (remoteStream != null)
+                                await remoteStream.DisposeAsync();
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    Console.WriteLine("Client request timeout.");
+                    await WriteTextAsync(clientStream, "HTTP/1.1 408 Request Timeout\r\n\r\n", CancellationToken.None);
+                }
+                catch (InvalidDataException)
+                {
+                    Console.WriteLine("Oversized header line.");
+                    await WriteTextAsync(clientStream, "HTTP/1.1 431 Request Header Fields Too Large\r\n\r\n", CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error handling HTTP proxy request: {ex.Message}");
+                    await WriteTextAsync(clientStream, "HTTP/1.1 500 Internal Server Error\r\n\r\n", CancellationToken.None);
+                }
+            }
+        }
+
+        private async Task HandleHttpRequestAsync(NetworkStream clientStream, CancellationToken token)
+        {
+            var MAX_LINE_LENGTH = 8192;
+            var REQUEST_TIMEOUT = 5.0;
+            var UPSTREAM_CONNECT_TIMEOUT = 30.0;
+
+            using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token))
+            {
+                try
+                {
+                    timeoutCts.CancelAfter(TimeSpan.FromSeconds(REQUEST_TIMEOUT));
+                    var line = await ReadLineAsync(clientStream, MAX_LINE_LENGTH, timeoutCts.Token);
+                    if (string.IsNullOrEmpty(line))
+                        return;
+
+                    // 判斷客戶端請求是 CONNECT 還是 一般的 HTTP Method (GET, POST...)
+                    var isConnect = line.StartsWith("CONNECT", StringComparison.OrdinalIgnoreCase);
+
+                    var parts = line.Split(' ');
+                    if (isConnect)
+                    {
+                        if (parts.Length < 2 || !parts[1].Contains(":"))
+                        {
+                            Console.WriteLine($"Malformed CONNECT request: {line.Trim()}");
+                            await WriteTextAsync(clientStream, "HTTP/1.1 400 Bad Request\r\n\r\n", timeoutCts.Token);
+                            return;
+                        }
+                    }
+
+                    // 讀取並保存客戶端送來的 Headers
+                    var clientHeaders = new StringBuilder();
+                    while (true)
+                    {
+                        timeoutCts.CancelAfter(TimeSpan.FromSeconds(REQUEST_TIMEOUT));
+                        var header = await ReadLineAsync(clientStream, MAX_LINE_LENGTH, timeoutCts.Token);
+                        if (string.IsNullOrEmpty(header) || header == "\r\n" || header == "\n")
+                            break;
+
+                        if (!isConnect)
+                        {
+                            // 針對一般 HTTP，我們要過濾掉會衝突的連線標頭，待會補上我們自己的
+                            if (header.StartsWith("Proxy-Authorization:", StringComparison.OrdinalIgnoreCase) ||
+                                header.StartsWith("Proxy-Connection:", StringComparison.OrdinalIgnoreCase) ||
+                                header.StartsWith("Connection:", StringComparison.OrdinalIgnoreCase))
+                                continue;
+                            clientHeaders.Append(header);
+                        }
+                    }
+
+                    using (var remoteClient = new TcpClient())
+                    {
+                        timeoutCts.CancelAfter(TimeSpan.FromSeconds(UPSTREAM_CONNECT_TIMEOUT));
+
+                        var remoteStream = null as Stream;
+                        try
+                        {
+                            try
+                            {
+                                await remoteClient.ConnectAsync(FwHost, FwPort, timeoutCts.Token);
+                                remoteStream = remoteClient.GetStream();
+
+                                if (UseSsl)
+                                {
+                                    var sslStream = new SslStream(remoteStream, false);
+                                    await sslStream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                                    {
+                                        TargetHost = FwHost,
+                                        EnabledSslProtocols =
+                                            System.Security.Authentication.SslProtocols.Tls12 |
+                                            System.Security.Authentication.SslProtocols.Tls13,
+                                        CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+                                        ClientCertificates = ClientCertificates,
+                                        RemoteCertificateValidationCallback = RemoteCertificateValidationCallback
+                                    }, timeoutCts.Token);
+                                    remoteStream = sslStream;
+                                }
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                Console.WriteLine($"Timeout connecting to upstream proxy {FwHost}:{FwPort}");
+                                await WriteTextAsync(clientStream, "HTTP/1.1 504 Gateway Timeout\r\n\r\n", CancellationToken.None);
+                                return;
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Failed to connect to upstream proxy: {ex.Message}");
+                                await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n\r\n", CancellationToken.None);
+                                return;
+                            }
+
+                            var credentials = $"{Username}:{Password}";
+                            var authEncoded = Convert.ToBase64String(Encoding.Latin1.GetBytes(credentials));
+
+                            if (isConnect)
+                            {
+                                var targetHostPort = parts[1];
+                                var connectRequest =
+                                    $"CONNECT {targetHostPort} HTTP/1.1\r\n" +
+                                    $"Host: {targetHostPort}\r\n" +
+                                    $"Proxy-Authorization: Basic {authEncoded}\r\n" +
+                                    $"Proxy-Connection: Keep-Alive\r\n\r\n";
+
+                                await WriteTextAsync(remoteStream, connectRequest, timeoutCts.Token);
+                            }
+
+                            try
+                            {
+                                if (isConnect)
+                                {
+                                    timeoutCts.CancelAfter(TimeSpan.FromSeconds(REQUEST_TIMEOUT));
+                                    var responseLine = await ReadLineAsync(remoteStream, MAX_LINE_LENGTH, timeoutCts.Token);
+                                    if (string.IsNullOrEmpty(responseLine))
+                                    {
+                                        Console.WriteLine("No response from upstream proxy.");
+                                        await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n\r\n", timeoutCts.Token);
+                                        return;
+                                    }
+
+                                    while (true)
+                                    {
+                                        timeoutCts.CancelAfter(TimeSpan.FromSeconds(REQUEST_TIMEOUT));
+                                        var header = await ReadLineAsync(remoteStream, MAX_LINE_LENGTH, timeoutCts.Token);
+                                        if (string.IsNullOrEmpty(header) || header == "\r\n" || header == "\n")
+                                            break;
+                                    }
+
+                                    if (!responseLine.Contains(" 200 "))
+                                    {
+                                        Console.WriteLine($"Upstream proxy rejected connection: {responseLine.Trim()}");
+                                        await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n", timeoutCts.Token);
+                                        await WriteTextAsync(clientStream, "Content-Type: text/plain\r\n", timeoutCts.Token);
+                                        await WriteTextAsync(clientStream, "\r\n", timeoutCts.Token);
+                                        await WriteTextAsync(clientStream, "Upstream proxy rejected the connection\r\n", timeoutCts.Token);
+                                        return;
+                                    }
+
+                                    await WriteTextAsync(clientStream, "HTTP/1.1 200 Connection Established\r\n\r\n", timeoutCts.Token);
+                                }
+                                else
+                                {
+                                    // 重新組合「請求行」+「原本的 Headers」+「上游 Proxy 認證」+「空行」
+                                    var forwardRequest =
+                                        $"{line}" +
+                                        $"{clientHeaders}" +
+                                        $"Connection: close\r\n" +
+                                        $"Proxy-Authorization: Basic {authEncoded}\r\n" +
+                                        $"Proxy-Connection: close\r\n\r\n";
+
+                                    // 強制設定為 close。因為轉發完這一次 Req/Res 後，PipeAsync 就會結束關閉連線
+                                    // 若保持 Keep-Alive 會導致後續請求直接跑進純 TCP Pipe 裡
+                                    // 而沒有被補上 Proxy-Authorization 導致上游拒絕
+                                    await WriteTextAsync(remoteStream, forwardRequest, timeoutCts.Token);
+                                }
 
                                 timeoutCts.CancelAfter(Timeout.Infinite);
                                 await PipeAsync(clientStream, remoteStream, timeoutCts.Token);

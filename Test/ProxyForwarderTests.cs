@@ -73,7 +73,7 @@ namespace Test
                     useHttpsForProxy ? (sender, cert, chain, err) => true : null))
                 {
                     // 建立一個 HttpClient，設定使用剛建立的 ProxyForwarder 作為本機代理
-                    var proxy = new WebProxy(forwarder.ProxyServer);
+                    var proxy = new WebProxy(forwarder.ProxyServer, BypassOnLocal: false);
                     using (var handler = new HttpClientHandler
                     {
                         Proxy = proxy,
@@ -137,7 +137,7 @@ namespace Test
                     url: $"{urlProtocol}://example.com",
                     newWindow: true,
                     proxyServer: proxyString,
-                    proxyBypassList: ["https://www.google.com"],
+                    proxyBypassList: ["<-loopback>", "www.google.com"],
                     remoteCertificateValidationCallback:
                         useHttpsForProxy ? (sender, cert, chain, err) => true : null,
                     token: cts.Token);
@@ -273,7 +273,7 @@ namespace Test
                                 // 這是一般的 GET/POST，直接回傳模擬的內容
                                 if (method != "CONNECT")
                                 {
-                                    var body = "<html><body>Standard HTTP Proxy Success</body></html>";
+                                    var body = "<html><body>HTTP Proxy Success</body></html>";
                                     var bodyBytes = Encoding.UTF8.GetBytes(body);
                                     var response =
                                             $"HTTP/1.1 200 OK\r\n" +
