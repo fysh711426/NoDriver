@@ -2,7 +2,6 @@
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
@@ -34,7 +33,30 @@ namespace Test
         }
 
         [TestMethod]
-        public async Task ProxyForwarder_HttpWithAuth_ShouldForwardCorrectly()
+        public async Task ProxyForwarder_WithAuth_HttpProxy_HttpsUrl_ShouldForwardCorrectly()
+        {
+            await ProxyForwarder_WithAuth_ShouldForwardCorrectly("http", "https");
+        }
+
+        [TestMethod]
+        public async Task ProxyForwarder_WithAuth_HttpsProxy_HttpsUrl_ShouldForwardCorrectly()
+        {
+            await ProxyForwarder_WithAuth_ShouldForwardCorrectly("https", "https");
+        }
+
+        [TestMethod]
+        public async Task ProxyForwarder_WithAuth_HttpProxy_HttpUrl_ShouldForwardCorrectly()
+        {
+            await ProxyForwarder_WithAuth_ShouldForwardCorrectly("http", "http");
+        }
+
+        [TestMethod]
+        public async Task ProxyForwarder_WithAuth_HttpsProxy_HttpUrl_ShouldForwardCorrectly()
+        {
+            await ProxyForwarder_WithAuth_ShouldForwardCorrectly("https", "http");
+        }
+
+        private async Task ProxyForwarder_WithAuth_ShouldForwardCorrectly(string proxyProtocol, string urlProtocol)
         {
             // Arrange
             var user = "testuser";
@@ -42,11 +64,13 @@ namespace Test
             using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
             {
                 // 啟動微型上游 HTTP 代理伺服器
-                var (proxyPort, proxyTask) = StartDummyUpstreamProxy(user, pass, cts.Token);
+                var useHttpsForProxy = proxyProtocol == "https";
+                var (proxyPort, proxyTask) = StartDummyUpstreamProxy(user, pass, useHttpsForProxy, cts.Token);
 
                 // 建立 ProxyForwarder
-                var proxyString = $"http://{user}:{pass}@127.0.0.1:{proxyPort}";
-                await using (var forwarder = new ProxyForwarder(proxyString))
+                var proxyString = $"{proxyProtocol}://{user}:{pass}@127.0.0.1:{proxyPort}";
+                await using (var forwarder = new ProxyForwarder(proxyString, remoteCertificateValidationCallback:
+                    useHttpsForProxy ? (sender, cert, chain, err) => true : null))
                 {
                     // 建立一個 HttpClient，設定使用剛建立的 ProxyForwarder 作為本機代理
                     var proxy = new WebProxy(forwarder.ProxyServer);
@@ -59,13 +83,13 @@ namespace Test
                     using (var client = new HttpClient(handler))
                     {
                         // Act: 透過 Forwarder 向隨便一個網域發出請求
-                        using (var response = await client.GetAsync("https://example.com"))
+                        using (var response = await client.GetAsync($"{urlProtocol}://example.com"))
                         {
                             var html = await response.Content.ReadAsStringAsync();
 
                             // Assert
                             Assert.IsTrue(response.IsSuccessStatusCode, "代理轉發請求失敗");
-                            Assert.AreEqual("<html><body>HTTPS Proxy Success</body></html>", html, "代理回傳的內容與預期不符");
+                            Assert.AreEqual("<html><body>HTTP Proxy Success</body></html>", html, "代理回傳的內容與預期不符");
                         }
                     }
                 }
@@ -73,7 +97,30 @@ namespace Test
         }
 
         [TestMethod]
-        public async Task Browser_CreateContextAsync_WithHttpProxy_ShouldSucceed()
+        public async Task Browser_CreateContextAsync_HttpProxy_HttpsUrl_ShouldSucceed()
+        {
+            await Browser_CreateContextAsync_ShouldSucceed("http", "https");
+        }
+
+        [TestMethod]
+        public async Task Browser_CreateContextAsync_HttpsProxy_HttpsUrl_ShouldSucceed()
+        {
+            await Browser_CreateContextAsync_ShouldSucceed("https", "https");
+        }
+
+        [TestMethod]
+        public async Task Browser_CreateContextAsync_HttpProxy_HttpUrl_ShouldSucceed()
+        {
+            await Browser_CreateContextAsync_ShouldSucceed("http", "http");
+        }
+
+        [TestMethod]
+        public async Task Browser_CreateContextAsync_HttpsProxy_HttpUrl_ShouldSucceed()
+        {
+            await Browser_CreateContextAsync_ShouldSucceed("https", "http");
+        }
+
+        private async Task Browser_CreateContextAsync_ShouldSucceed(string proxyProtocol, string urlProtocol)
         {
             // Arrange
             var user = "browserUser";
@@ -81,15 +128,18 @@ namespace Test
             using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
             {
                 // 啟動微型上游 HTTP 代理伺服器
-                var (proxyPort, proxyTask) = StartDummyUpstreamProxy(user, pass, cts.Token);
+                var useHttpsForProxy = proxyProtocol == "https";
+                var (proxyPort, proxyTask) = StartDummyUpstreamProxy(user, pass, useHttpsForProxy, cts.Token);
 
                 // Act: 透過 Browser 的 CreateContextAsync 建立 ProxyForwarder 作為本機代理
-                var proxyString = $"http://{user}:{pass}@127.0.0.1:{proxyPort}";
+                var proxyString = $"{proxyProtocol}://{user}:{pass}@127.0.0.1:{proxyPort}";
                 var tab = await _browser!.CreateContextAsync(
-                    url: "https://example.com",
+                    url: $"{urlProtocol}://example.com",
                     newWindow: true,
                     proxyServer: proxyString,
                     proxyBypassList: ["https://www.google.com"],
+                    remoteCertificateValidationCallback:
+                        useHttpsForProxy ? (sender, cert, chain, err) => true : null,
                     token: cts.Token);
 
                 // 等待一下確保瀏覽器有發送請求
@@ -98,7 +148,7 @@ namespace Test
                 // Assert
                 var root = await tab.SelectAsync("body");
                 var html = await root!.GetHtmlAsync();
-                Assert.AreEqual("<body>HTTPS Proxy Success</body>", html, "代理回傳的內容與預期不符");
+                Assert.AreEqual("<body>HTTP Proxy Success</body>", html, "代理回傳的內容與預期不符");
 
                 // 確認代理伺服器有成功完成任務（沒有拋出錯誤）
                 await proxyTask;
@@ -143,11 +193,16 @@ namespace Test
         /// 它會驗證 HTTP CONNECT 請求中的 Proxy-Authorization 是否正確，<br/>
         /// 並回傳簡單的 HTTP 200 頁面。
         /// </summary>
-        private (int Port, Task ServerTask) StartDummyUpstreamProxy(string user, string pass, CancellationToken token)
+        private (int Port, Task ServerTask) StartDummyUpstreamProxy(string user, string pass, bool useHttpsForProxy, CancellationToken token)
         {
             var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            // 產生一張臨時的自簽憑證，用來應付 HTTPS 的 TLS 握手
+            var dummyCert = GetDummyCertificate();
+            if (dummyCert == null)
+                throw new InvalidOperationException("Not found certificate.");
 
             var task = Task.Run(async () =>
             {
@@ -156,109 +211,133 @@ namespace Test
                     using (var client = await listener.AcceptTcpClientAsync(token))
                     using (var stream = client.GetStream())
                     {
-                        // 先在明文模式下處理 Proxy 的 CONNECT 請求
-                        using (var reader = new StreamReader(stream, Encoding.Latin1, leaveOpen: true))
-                        using (var writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true })
+                        // ==========================================
+                        // 1. 【外層 TLS】如果 Proxy 自身是 HTTPS
+                        // ==========================================
+
+                        Stream proxyStream = stream;
+                        if (useHttpsForProxy)
                         {
-                            // 讀取 CONNECT 請求行 (例如: CONNECT example.com:443 HTTP/1.1)
-                            var line = await reader.ReadLineAsync(token);
-                            if (string.IsNullOrEmpty(line))
-                                return;
-
-                            var parts = line.Split(' ');
-
-                            // 判斷是 GET, POST, 或 CONNECT
-                            var method = parts[0].ToUpper();
-
-                            // 透過 Port 判斷是 HTTP(80) 還是 HTTPS(443)
-                            var isHttps = parts.Length > 1 && parts[1].EndsWith(":443");
-
-                            var hasAuth = false;
-                            var auth = Convert.ToBase64String(Encoding.Latin1.GetBytes($"{user}:{pass}"));
-
-                            // 解析 HTTP Headers 尋找認證資訊
-                            while (!string.IsNullOrWhiteSpace(line = await reader.ReadLineAsync(token)))
+                            // 一連線進來，立刻以 Server 身份進行 TLS 握手
+                            var sslStream = new SslStream(stream, true);
+                            await sslStream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
                             {
-                                if (line.StartsWith("Proxy-Authorization: Basic", StringComparison.OrdinalIgnoreCase))
+                                ServerCertificate = dummyCert,
+                                ClientCertificateRequired = false,
+                                EnabledSslProtocols =
+                                    System.Security.Authentication.SslProtocols.Tls12 |
+                                    System.Security.Authentication.SslProtocols.Tls13
+                            }, token);
+                            // 後續的 Proxy 認證與 CONNECT 請求都在這條加密通道中進行
+                            proxyStream = sslStream;
+                        }
+                        await using (proxyStream)
+                        {
+                            // 先在明文模式下處理 Proxy 的 CONNECT 請求
+                            using (var reader = new StreamReader(proxyStream, Encoding.Latin1, leaveOpen: true))
+                            using (var writer = new StreamWriter(proxyStream, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true })
+                            {
+                                // 讀取 CONNECT 請求行 (例如: CONNECT example.com:443 HTTP/1.1)
+                                var line = await reader.ReadLineAsync(token);
+                                if (string.IsNullOrEmpty(line))
+                                    return;
+
+                                var parts = line.Split(' ');
+
+                                // 判斷是 GET, POST, 或 CONNECT
+                                var method = parts[0].ToUpper();
+
+                                // 透過 Port 判斷是 HTTP(80) 還是 HTTPS(443)
+                                var isHttps = parts.Length > 1 && parts[1].EndsWith(":443");
+
+                                var hasAuth = false;
+                                var auth = Convert.ToBase64String(Encoding.Latin1.GetBytes($"{user}:{pass}"));
+
+                                // 解析 HTTP Headers 尋找認證資訊
+                                while (!string.IsNullOrWhiteSpace(line = await reader.ReadLineAsync(token)))
                                 {
-                                    var tokenStr = line.Substring("Proxy-Authorization: Basic".Length).Trim();
-                                    if (tokenStr == auth)
-                                        hasAuth = true;
+                                    if (line.StartsWith("Proxy-Authorization: Basic", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        var tokenStr = line.Substring("Proxy-Authorization: Basic".Length).Trim();
+                                        if (tokenStr == auth)
+                                            hasAuth = true;
+                                    }
                                 }
-                            }
 
-                            if (!hasAuth)
-                            {
-                                await writer.WriteAsync("HTTP/1.1 407 Proxy Authentication Required\r\n\r\n".AsMemory(), token);
-                                return;
-                            }
-
-                            // 這是一般的 GET/POST，直接回傳模擬的內容
-                            if (method != "CONNECT")
-                            {
-                                var body = "<html><body>Standard HTTP Proxy Success</body></html>";
-                                var bodyBytes = Encoding.UTF8.GetBytes(body);
-                                var response =
-                                        $"HTTP/1.1 200 OK\r\n" +
-                                        $"Content-Type: text/html; charset=utf-8\r\n" +
-                                        $"Content-Length: {bodyBytes.Length}\r\n" +
-                                        $"Connection: close\r\n\r\n" +
-                                        $"{body}";
-                                await writer.WriteAsync(response.AsMemory(), token);
-                                await writer.FlushAsync();
-                                return;
-                            }
-
-                            // 認證成功：回傳 Connection Established 建立隧道
-                            await writer.WriteAsync("HTTP/1.1 200 Connection Established\r\n\r\n".AsMemory(), token);
-
-                            // 隧道建立完成，決定後續溝通的 Stream
-                            Stream targetStream = stream;
-                            if (isHttps)
-                            {
-                                // 產生一張臨時的自簽憑證，用來應付 HTTPS 的 TLS 握手
-                                //var dummyCert = GenerateDummyCertificate();
-                                var dummyCert = GetDummyCertificate();
-                                if (dummyCert == null)
-                                    throw new InvalidOperationException("Not found certificate.");
-
-                                // 如果是 HTTPS，將 Stream 升級為 SslStream，並以 Server 身分進行 TLS 握手
-                                var sslStream = new SslStream(stream, false);
-                                await sslStream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+                                if (!hasAuth)
                                 {
-                                    ServerCertificate = dummyCert,
-                                    ClientCertificateRequired = false,
-                                    EnabledSslProtocols =
-                                        System.Security.Authentication.SslProtocols.Tls12 |
-                                        System.Security.Authentication.SslProtocols.Tls13
-                                }, token);
-                                targetStream = sslStream;
-                            }
-                            await using (targetStream)
-                            {
-                                // 使用新的 (解密後的) Stream 讀取真實的 HTTP 請求
-                                using (var targetReader = new StreamReader(targetStream, Encoding.Latin1, leaveOpen: true))
-                                using (var targetWriter = new StreamWriter(targetStream, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true })
+                                    await writer.WriteAsync("HTTP/1.1 407 Proxy Authentication Required\r\n\r\n".AsMemory(), token);
+                                    return;
+                                }
+
+                                // 這是一般的 GET/POST，直接回傳模擬的內容
+                                if (method != "CONNECT")
                                 {
-                                    var reqLine = await targetReader.ReadLineAsync(token);
-                                    if (string.IsNullOrEmpty(reqLine))
-                                        return;
-
-                                    // 將 Header 讀完
-                                    while (!string.IsNullOrWhiteSpace(await targetReader.ReadLineAsync(token))) { }
-
-                                    // 模擬目標伺服器回傳假內容 (顯示協定來驗證是否正確走入 HTTPS 分支)
-                                    var protocol = isHttps ? "HTTPS" : "HTTP";
-                                    var body = $"<html><body>{protocol} Proxy Success</body></html>";
+                                    var body = "<html><body>Standard HTTP Proxy Success</body></html>";
                                     var bodyBytes = Encoding.UTF8.GetBytes(body);
                                     var response =
-                                        $"HTTP/1.1 200 OK\r\n" +
-                                        $"Content-Type: text/html; charset=utf-8\r\n" +
-                                        $"Content-Length: {bodyBytes.Length}\r\n" +
-                                        $"Connection: close\r\n\r\n" +
-                                        $"{body}";
-                                    await targetWriter.WriteAsync(response.AsMemory(), token);
-                                    await targetWriter.FlushAsync();
+                                            $"HTTP/1.1 200 OK\r\n" +
+                                            $"Content-Type: text/html; charset=utf-8\r\n" +
+                                            $"Content-Length: {bodyBytes.Length}\r\n" +
+                                            $"Connection: close\r\n\r\n" +
+                                            $"{body}";
+                                    await writer.WriteAsync(response.AsMemory(), token);
+                                    await writer.FlushAsync();
+                                    return;
+                                }
+
+                                // 認證成功：回傳 Connection Established 建立隧道
+                                await writer.WriteAsync("HTTP/1.1 200 Connection Established\r\n\r\n".AsMemory(), token);
+
+                                // ==========================================
+                                // 2. 【內層 TLS】如果目標網站也是 HTTPS
+                                // ==========================================
+
+                                // 隧道建立完成，決定後續溝通的 Stream
+                                Stream targetStream = proxyStream;
+                                if (isHttps)
+                                {
+                                    // 如果是 HTTPS，將 Stream 升級為 SslStream，並以 Server 身分進行 TLS 握手
+                                    var sslStream = new SslStream(proxyStream, true);
+                                    await sslStream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+                                    {
+                                        ServerCertificate = dummyCert,
+                                        ClientCertificateRequired = false,
+                                        EnabledSslProtocols =
+                                            System.Security.Authentication.SslProtocols.Tls12 |
+                                            System.Security.Authentication.SslProtocols.Tls13
+                                    }, token);
+                                    targetStream = sslStream;
+                                }
+                                await using (targetStream)
+                                {
+                                    // ==========================================
+                                    // 3. 處理最終的 HTTP GET 請求並回傳結果
+                                    // ==========================================
+
+                                    // 使用新的 (解密後的) Stream 讀取真實的 HTTP 請求
+                                    using (var targetReader = new StreamReader(targetStream, Encoding.Latin1, leaveOpen: true))
+                                    using (var targetWriter = new StreamWriter(targetStream, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true })
+                                    {
+                                        var reqLine = await targetReader.ReadLineAsync(token);
+                                        if (string.IsNullOrEmpty(reqLine))
+                                            return;
+
+                                        // 將 Header 讀完
+                                        while (!string.IsNullOrWhiteSpace(await targetReader.ReadLineAsync(token))) { }
+
+                                        // 模擬目標伺服器回傳假內容
+                                        var body = $"<html><body>HTTP Proxy Success</body></html>";
+                                        var bodyBytes = Encoding.UTF8.GetBytes(body);
+                                        var response =
+                                            $"HTTP/1.1 200 OK\r\n" +
+                                            $"Content-Type: text/html; charset=utf-8\r\n" +
+                                            $"Content-Length: {bodyBytes.Length}\r\n" +
+                                            $"Connection: close\r\n\r\n" +
+                                            $"{body}";
+                                        await targetWriter.WriteAsync(response.AsMemory(), token);
+                                        await targetWriter.FlushAsync();
+                                    }
                                 }
                             }
                         }
@@ -383,7 +462,6 @@ namespace Test
             return (port, task);
         }
 
-        // 讀取 Stream 的小幫手，確保 Bytes 被完整讀出
         private async Task<byte[]> ReadBytesAsync(Stream stream, int size, CancellationToken token)
         {
             var buffer = new byte[size];
@@ -391,21 +469,11 @@ namespace Test
             while (count < size)
             {
                 var read = await stream.ReadAsync(buffer, count, size - count, token);
-                if (read == 0) throw new EndOfStreamException("Socket connection closed unexpectedly.");
+                if (read == 0) 
+                    throw new EndOfStreamException("Socket connection closed unexpectedly.");
                 count += read;
             }
             return buffer;
-        }
-
-        // 輔助方法：產生一張臨時的自簽憑證供 SslStream 使用
-        private X509Certificate2 GenerateDummyCertificate()
-        {
-            using (var rsa = RSA.Create(2048))
-            {
-                var req = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-                // 建立一張效期一年的憑證
-                return req.CreateSelfSigned(DateTimeOffset.Now, DateTimeOffset.Now.AddYears(1));
-            }  
         }
 
         private X509Certificate2? GetDummyCertificate()
