@@ -487,18 +487,20 @@ namespace NoDriver.Core.Runtime
 
         private async Task HandleSocksRequestAsync(NetworkStream clientStream, CancellationToken token)
         {
-            byte ATYP_IPv4 = 0x01;
-            byte ATYP_IPv6 = 0x04;
-            byte ATYP_DNS = 0x03;
+            const byte ATYP_IPv4 = 0x01;
+            const byte ATYP_IPv6 = 0x04;
+            const byte ATYP_DNS = 0x03;
 
             try
             {
+                // 握手與協商 (Handshake & Method Selection)
                 byte version, numMethods = 0;
                 try
                 {
+                    // 讀取前兩個位元組: [版本號, 支援的驗證方法數量]
                     var bytes = await ReadBytesAsync(clientStream, 2, token);
-                    version = bytes[0];
-                    numMethods = bytes[1];
+                    version = bytes[0];    // 預期為 0x05 (SOCKS5)
+                    numMethods = bytes[1]; // 客戶端提供的驗證方法總數
                 }
                 catch
                 {
@@ -506,22 +508,27 @@ namespace NoDriver.Core.Runtime
                     return;
                 }
 
+                // 讀取客戶端提供的所有驗證方法 (Methods list)，雖然這裡直接讀完但不做檢查
                 await ReadBytesAsync(clientStream, numMethods, token);
 
+                // 回應客戶端: 選擇「免驗證」(0x00)
                 await clientStream.WriteAsync(new byte[] { version, 0 }, token);
 
+                // 讀取連線請求 (Read Connect Request)
                 byte cmd, resv, atyp = 0;
                 {
+                    // 讀取請求標頭的前 4 位元組: [版本, 指令(1=CONNECT), 保留位, 地址類型]
                     var bytes = await ReadBytesAsync(clientStream, 4, token);
                     version = bytes[0];
-                    cmd = bytes[1];
+                    cmd = bytes[1];     // 通常 0x01 代表 CONNECT 請求
                     resv = bytes[2];
-                    atyp = bytes[3];
+                    atyp = bytes[3];    // 地址類型: IPv4, IPv6 或 DNS
                 }
 
                 var targetHost = "";
                 var targetHostBytes = Array.Empty<byte>();
 
+                // 根據地址類型 (ATYP) 讀取目標主機位址
                 if (atyp == ATYP_IPv4)
                 {
                     targetHostBytes = await ReadBytesAsync(clientStream, 4, token);
@@ -540,35 +547,21 @@ namespace NoDriver.Core.Runtime
                     targetHost = Encoding.Latin1.GetString(targetHostBytes);
                 }
 
+                // 讀取目標埠號 (2 bytes, 大端序)
                 var portBytes = await ReadBytesAsync(clientStream, 2, token);
                 var port = BinaryPrimitives.ReadUInt16BigEndian(portBytes);
 
+                // 向「上游代理伺服器」發起連線 (Connect to Upstream Proxy)
                 using (var remoteClient = new TcpClient())
                 {
-                    var remoteStream = null as Stream;
-                    try
+                    // 連接到上游代理伺服器 (FwHost:FwPort)
+                    await remoteClient.ConnectAsync(FwHost, FwPort, token);
+                    await using (var remoteStream = remoteClient.GetStream())
                     {
-                        await remoteClient.ConnectAsync(FwHost, FwPort, token);
-                        remoteStream = remoteClient.GetStream();
-
-                        if (UseSsl)
-                        {
-                            var sslStream = new SslStream(remoteStream, false, (sender, cert, chain, err) => true);
-                            await sslStream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
-                            {
-                                TargetHost = FwHost,
-                                EnabledSslProtocols =
-                                    System.Security.Authentication.SslProtocols.Tls12 |
-                                    System.Security.Authentication.SslProtocols.Tls13,
-                                CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-                                ClientCertificates = ClientCertificates,
-                                RemoteCertificateValidationCallback = RemoteCertificateValidationCallback
-                            }, token);
-                            remoteStream = sslStream;
-                        }
-
+                        // 與上游進行握手，告知我們支援「帳密驗證」(2)
                         await remoteStream.WriteAsync(new byte[] { version, 1, 2 }, token);
 
+                        // 讀取上游的選擇結果
                         byte serverVersion, serverAuthMethod = 0;
                         {
                             var bytes = await ReadBytesAsync(remoteStream, 2, token);
@@ -576,6 +569,7 @@ namespace NoDriver.Core.Runtime
                             serverAuthMethod = bytes[1];
                         }
 
+                        // 若上游要求帳密驗證 (Method 0x02)
                         if (serverAuthMethod == 2)
                         {
                             var uBytes = Encoding.Latin1.GetBytes(Username);
@@ -583,15 +577,16 @@ namespace NoDriver.Core.Runtime
 
                             using (var authTicket = new MemoryStream())
                             {
-                                authTicket.WriteByte(1);
-                                authTicket.WriteByte((byte)uBytes.Length);
-                                authTicket.Write(uBytes, 0, uBytes.Length);
-                                authTicket.WriteByte((byte)pBytes.Length);
-                                authTicket.Write(pBytes, 0, pBytes.Length);
+                                authTicket.WriteByte(1);                    // 帳密驗證協議版本
+                                authTicket.WriteByte((byte)uBytes.Length);  // 帳號長度
+                                authTicket.Write(uBytes, 0, uBytes.Length); // 帳號內容
+                                authTicket.WriteByte((byte)pBytes.Length);  // 密碼長度
+                                authTicket.Write(pBytes, 0, pBytes.Length); // 密碼內容
 
                                 await remoteStream.WriteAsync(authTicket.ToArray(), token);
                             }
 
+                            // 讀取上游的驗證結果
                             byte ver, result = 0;
                             {
                                 var bytes = await ReadBytesAsync(remoteStream, 2, token);
@@ -599,45 +594,50 @@ namespace NoDriver.Core.Runtime
                                 result = bytes[1];
                             }
 
+                            // 0 代表驗證成功
                             if (result != 0)
                                 throw new Exception($"Socks authentication error: {result}");
                         }
 
+                        // 將客戶端的連線請求轉發給上游
                         await remoteStream.WriteAsync(new byte[] { version, cmd, resv, atyp }, token);
+
+                        // 若是 DNS 類型，要先傳送域名長度
                         if (atyp == ATYP_DNS)
                             await remoteStream.WriteAsync(new byte[] { (byte)targetHostBytes.Length }, token);
+
+                        // 傳送目標地址與埠號
                         await remoteStream.WriteAsync(targetHostBytes, token);
                         await remoteStream.WriteAsync(portBytes, token);
 
+                        // 讀取並驗證上游的回應 (確保上游連線成功)
                         var upResponse = await ReadBytesAsync(remoteStream, 4, token);
-                        if (upResponse[1] != 0)
+                        if (upResponse[1] != 0) // 第 2 byte 為狀態碼，0 代表連線成功
                             throw new Exception($"Socks upstream connection error: {upResponse[1]}");
-                        var bndAtyp = upResponse[3];
 
-                        // (BND.ADDR + BND.PORT)
-                        var bndHostLen = 0;
-                        if (bndAtyp == ATYP_IPv4) bndHostLen = 4;
-                        else if (bndAtyp == ATYP_IPv6) bndHostLen = 16;
-                        else if (bndAtyp == ATYP_DNS)
+                        // 消耗掉上游回傳的 BND.ADDR 和 BND.PORT (把它們讀完但不使用)
+                        var remainLen = upResponse[3] switch
                         {
-                            var bytes = await ReadBytesAsync(remoteStream, 1, token);
-                            bndHostLen = bytes[0];
-                        }
-                        var bndHostBytes = await ReadBytesAsync(remoteStream, bndHostLen, token);
-                        var bndPortBytes = await ReadBytesAsync(remoteStream, 2, token);
+                            ATYP_IPv4 => 4 + 2,                                                // IPv4 (4)  + Port (2)
+                            ATYP_IPv6 => 16 + 2,                                               // IPv6 (16) + Port (2)
+                            ATYP_DNS => (await ReadBytesAsync(remoteStream, 1, token))[0] + 2, // Len + Port
+                            _ => throw new Exception("Unknown ATYP")
+                        };
+                        await ReadBytesAsync(remoteStream, remainLen, token); // 徹底清空上游的 Header 緩衝區
 
-                        await clientStream.WriteAsync(upResponse, token);
-                        if (bndAtyp == ATYP_DNS)
-                            await clientStream.WriteAsync(new byte[] { (byte)(bndHostLen) }, token);
-                        await clientStream.WriteAsync(bndHostBytes, token);
-                        await clientStream.WriteAsync(bndPortBytes, token);
+                        // 改成建立一個「假的、安全的」回應給 Chrome
+                        var fakeResponse = new byte[]
+                        {
+                            0x05,                   // Version
+                            0x00,                   // Success
+                            0x00,                   // Reserved
+                            0x01,                   // ATYP: 強制設為 IPv4 (0x01)
+                            0x00, 0x00, 0x00, 0x00, // BND.ADDR: 0.0.0.0
+                            0x00, 0x00              // BND.PORT: 0
+                        };
+                        await clientStream.WriteAsync(fakeResponse, token);
 
                         await PipeAsync(clientStream, remoteStream, token);
-                    }
-                    finally
-                    {
-                        if (remoteStream != null)
-                            await remoteStream.DisposeAsync();
                     }
                 }
             }
@@ -700,24 +700,34 @@ namespace NoDriver.Core.Runtime
             return buffer;
         }
 
-        private async Task PipeAsync(Stream stream1, Stream stream2, CancellationToken token)
+        private async Task PipeAsync(Stream client, Stream remote, CancellationToken token)
         {
-            using (var cts = CancellationTokenSource.CreateLinkedTokenSource(token))
+            var clientSocket = (client as NetworkStream)?.Socket;
+            var remoteSocket = (remote as NetworkStream)?.Socket;
+
+            var task1 = CopyAndShutdownAsync(client, remote, remoteSocket, token);
+            var task2 = CopyAndShutdownAsync(remote, client, clientSocket, token);
+
+            await Task.WhenAll(task1, task2);
+        }
+
+        private async Task CopyAndShutdownAsync(Stream input, Stream output, Socket? outputSocket, CancellationToken token)
+        {
+            try
             {
-                var task1 = stream1.CopyToAsync(stream2, cts.Token);
-                var task2 = stream2.CopyToAsync(stream1, cts.Token);
-
-                var completedTask = await Task.WhenAny(task1, task2);
-                cts.Cancel();
-
-                try
+                await input.CopyToAsync(output, token);
+            }
+            catch { }
+            finally
+            {
+                // 優雅關鍵：告訴對方「我不會再發送資料了」，但對方仍然可以傳完剩下的資料給我
+                if (outputSocket?.Connected == true)
                 {
-                    await Task.WhenAll(task1, task2);
-                }
-                catch (OperationCanceledException) { }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Piping error: {ex.Message}");
+                    try
+                    {
+                        outputSocket.Shutdown(SocketShutdown.Send);
+                    }
+                    catch { }
                 }
             }
         }
