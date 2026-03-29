@@ -22,6 +22,7 @@ namespace Test
             };
             // 告訴瀏覽器略過憑證錯誤
             config.AddArgument("--ignore-certificate-errors");
+            // 使用 Socks Proxy 時，阻止瀏覽器將 http 升級到 https
             config.AddArgument("--disable-features=HttpsUpgrades");
             _browser = await Browser.CreateAsync(config);
         }

@@ -104,8 +104,7 @@ namespace Test
         [TestMethod]
         public async Task CreateContextAsync_WithProxy_ShouldExecuteWithoutError()
         {
-            // Arrange
-            // 隨便給定一個本機假 Proxy，重點是觸發內部 ProxyForwarder 的建立邏輯
+            // Arrange: 隨便給定一個本機假 Proxy，重點是觸發內部 ProxyForwarder 的建立邏輯
             var fakeProxy = "socks5://127.0.0.1:9999";
 
             // Act
