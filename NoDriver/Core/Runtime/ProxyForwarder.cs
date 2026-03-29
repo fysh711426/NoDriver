@@ -174,7 +174,7 @@ namespace NoDriver.Core.Runtime
                     {
                         timeoutCts.CancelAfter(TimeSpan.FromSeconds(UPSTREAM_CONNECT_TIMEOUT));
 
-                        var remoteStream = null as Stream;
+                        Stream? remoteStream = null;
                         try
                         {
                             try
@@ -345,7 +345,7 @@ namespace NoDriver.Core.Runtime
                     {
                         timeoutCts.CancelAfter(TimeSpan.FromSeconds(UPSTREAM_CONNECT_TIMEOUT));
 
-                        var remoteStream = null as Stream;
+                        Stream? remoteStream = null;
                         try
                         {
                             try
@@ -616,27 +616,21 @@ namespace NoDriver.Core.Runtime
                             throw new Exception($"Socks upstream connection error: {upResponse[1]}");
 
                         // 消耗掉上游回傳的 BND.ADDR 和 BND.PORT (把它們讀完但不使用)
-                        var remainLen = upResponse[3] switch
+                        var addrLen = upResponse[3] switch
                         {
                             ATYP_IPv4 => 4 + 2,                                                // IPv4 (4)  + Port (2)
                             ATYP_IPv6 => 16 + 2,                                               // IPv6 (16) + Port (2)
                             ATYP_DNS => (await ReadBytesAsync(remoteStream, 1, token))[0] + 2, // Len + Port
                             _ => throw new Exception("Unknown ATYP")
                         };
-                        await ReadBytesAsync(remoteStream, remainLen, token); // 徹底清空上游的 Header 緩衝區
+                        var upResponseAddr = await ReadBytesAsync(remoteStream, addrLen, token); // 徹底清空上游的 Header 緩衝區
 
-                        // 改成建立一個「假的、安全的」回應給 Chrome
-                        var fakeResponse = new byte[]
-                        {
-                            0x05,                   // Version
-                            0x00,                   // Success
-                            0x00,                   // Reserved
-                            0x01,                   // ATYP: 強制設為 IPv4 (0x01)
-                            0x00, 0x00, 0x00, 0x00, // BND.ADDR: 0.0.0.0
-                            0x00, 0x00              // BND.PORT: 0
-                        };
-                        await clientStream.WriteAsync(fakeResponse, token);
-
+                        // 將結果寫回給 Chrome
+                        await clientStream.WriteAsync(upResponse, token);
+                        if (upResponse[3] == ATYP_DNS)
+                            await clientStream.WriteAsync(new byte[] { (byte)(addrLen - 2) }, token);
+                        await clientStream.WriteAsync(upResponseAddr, token);
+                        
                         await PipeAsync(clientStream, remoteStream, token);
                     }
                 }
@@ -702,32 +696,22 @@ namespace NoDriver.Core.Runtime
 
         private async Task PipeAsync(Stream client, Stream remote, CancellationToken token)
         {
-            var clientSocket = (client as NetworkStream)?.Socket;
-            var remoteSocket = (remote as NetworkStream)?.Socket;
-
-            var task1 = CopyAndShutdownAsync(client, remote, remoteSocket, token);
-            var task2 = CopyAndShutdownAsync(remote, client, clientSocket, token);
-
-            await Task.WhenAll(task1, task2);
-        }
-
-        private async Task CopyAndShutdownAsync(Stream input, Stream output, Socket? outputSocket, CancellationToken token)
-        {
-            try
+            using (var cts = CancellationTokenSource.CreateLinkedTokenSource(token))
             {
-                await input.CopyToAsync(output, token);
-            }
-            catch { }
-            finally
-            {
-                // 優雅關鍵：告訴對方「我不會再發送資料了」，但對方仍然可以傳完剩下的資料給我
-                if (outputSocket?.Connected == true)
+                var task1 = client.CopyToAsync(remote, cts.Token);
+                var task2 = remote.CopyToAsync(client, cts.Token);
+
+                var completedTask = await Task.WhenAny(task1, task2);
+                cts.Cancel();
+
+                try
                 {
-                    try
-                    {
-                        outputSocket.Shutdown(SocketShutdown.Send);
-                    }
-                    catch { }
+                    await Task.WhenAll(task1, task2);
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Piping error: {ex.Message}");
                 }
             }
         }
