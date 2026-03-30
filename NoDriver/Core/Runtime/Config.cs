@@ -84,6 +84,7 @@ namespace NoDriver.Core.Runtime
         /// </summary>
         public bool AutodiscoverTargets { get; set; } = true;
         public Dictionary<string, object> Attributes { get; } = new();
+        public IReadOnlyList<string> TempExtensionDirs => _tempExtensionDirs.AsReadOnly();
 
         public Config()
         {
@@ -223,36 +224,6 @@ namespace NoDriver.Core.Runtime
                 args.Add($"--remote-debugging-port={Port}");
 
             return args;
-        }
-
-        public async Task ClearAsync(CancellationToken token = default)
-        {
-            foreach (var tempDir in _tempExtensionDirs)
-            {
-                for (var i = 0; i < 5; i++)
-                {
-                    try
-                    {
-                        if (!string.IsNullOrWhiteSpace(tempDir))
-                        {
-                            if (Directory.Exists(tempDir))
-                                Directory.Delete(tempDir, true);
-                            Console.WriteLine($"Successfully removed temp extension dir {tempDir}");
-                        }
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        if (i == 4)
-                            Console.WriteLine(
-                                $"Problem removing temp extension dir {tempDir}\n" +
-                                $"Consider checking whether it's there and remove it by hand\n" +
-                                $"Error: {ex.Message}");
-                        await Task.Delay(150, token);
-                    }
-                }
-            }
-            _tempExtensionDirs.Clear();
         }
     }
 }

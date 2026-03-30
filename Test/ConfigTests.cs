@@ -121,7 +121,7 @@ namespace Test
                 File.Delete(zipPath);
 
             // 呼叫本身的方法來清理產生的暫存解壓縮檔
-            await _config.ClearAsync();
+            await ClearAsync();
         }
 
         [TestMethod]
@@ -167,7 +167,7 @@ namespace Test
             Assert.IsTrue(Directory.Exists(tempDir), "清理前，解壓縮的暫存資料夾應該存在");
 
             // Act
-            await _config.ClearAsync();
+            await ClearAsync();
 
             // Assert
             Assert.IsFalse(Directory.Exists(tempDir), "執行後，解壓縮的暫存資料夾應該被刪除");
@@ -178,6 +178,41 @@ namespace Test
 
             if (File.Exists(zipPath))
                 File.Delete(zipPath);
+        }
+
+        private async Task ClearAsync()
+        {
+            if (_config != null)
+            {
+                var tempExtensionDirs = _config.TempExtensionDirs.ToList();
+
+                foreach (var tempDir in tempExtensionDirs)
+                {
+                    if (!string.IsNullOrWhiteSpace(tempDir))
+                    {
+                        for (var i = 0; i < 5; i++)
+                        {
+                            try
+                            {
+                                if (Directory.Exists(tempDir))
+                                    Directory.Delete(tempDir, true);
+                                Console.WriteLine($"Successfully removed temp extension dir {tempDir}");
+                                break;
+                            }
+                            catch (Exception ex)
+                            {
+                                if (i == 4)
+                                    Console.WriteLine(
+                                        $"Problem removing temp extension dir {tempDir}\n" +
+                                        $"Consider checking whether it's there and remove it by hand\n" +
+                                        $"Error: {ex.Message}");
+                                else
+                                    await Task.Delay(150);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -95,9 +95,7 @@ namespace NoDriver.Core.Runtime
                 _cts?.Dispose();
                 _cts = null;
                 foreach (var (_, tx) in Mapper)
-                {
                     tx.Cancel(new ObjectDisposedException("Connection closed."));
-                }
                 Console.WriteLine($"Closed WebSocket connection to {WebSocketUrl}");
             }
         }
@@ -453,6 +451,13 @@ namespace NoDriver.Core.Runtime
 
         public async ValueTask DisposeAsync()
         {
+            await DisposeAsyncCore();
+            Dispose(false);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual async ValueTask DisposeAsyncCore()
+        {
             try
             {
                 using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
@@ -461,9 +466,6 @@ namespace NoDriver.Core.Runtime
                 }
             }
             catch { }
-
-            Dispose(true);
-            GC.SuppressFinalize(this);
         }
 
         public void Dispose()
@@ -478,7 +480,10 @@ namespace NoDriver.Core.Runtime
             {
                 _cts?.Cancel();
                 _cts?.Dispose();
+                _cts = null;
                 WebSocket?.Dispose();
+                foreach (var (_, tx) in Mapper)
+                    tx.Cancel(new ObjectDisposedException("Connection disposed."));
             }
         }
     }

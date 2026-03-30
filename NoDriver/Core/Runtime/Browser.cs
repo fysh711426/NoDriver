@@ -35,7 +35,7 @@ namespace NoDriver.Core.Runtime
     {
         private readonly ConcurrentList<Tab> _targets = new();
         private readonly ConcurrentList<ProxyForwarder> _proxyForwarders = new();
-        
+
         private Process? _process = null;
         private int? _processPid = null;
         private HTTPApi? _http = null;
@@ -359,7 +359,7 @@ namespace NoDriver.Core.Runtime
 
             if (!string.IsNullOrWhiteSpace(proxyServer))
             {
-                var forwarder = new ProxyForwarder(proxyServer, 
+                var forwarder = new ProxyForwarder(proxyServer,
                     clientCertificates, remoteCertificateValidationCallback);
                 _proxyForwarders.Add(forwarder);
                 proxyServer = forwarder.ProxyServer;
@@ -466,7 +466,7 @@ namespace NoDriver.Core.Runtime
                 return grid;
             }
         }
-        
+
         public async Task UpdateTargetsAsync(CancellationToken token = default)
         {
             if (Connection != null)
@@ -496,133 +496,6 @@ namespace NoDriver.Core.Runtime
             await Task.Yield();
         }
 
-        public async ValueTask DisposeAsync()
-        {
-            try
-            {
-                if (Connection != null)
-                    await Connection.DisposeAsync();
-            }
-            catch { }
-
-            try
-            {
-                var targets = _targets.ToList();
-                _targets.Clear();
-
-                foreach (var target in targets)
-                {
-                    try { await target.DisposeAsync(); }
-                    catch { }
-                }
-            }
-            catch { }
-
-            try
-            {
-                var proxyForwarders = _proxyForwarders.ToList();
-                _proxyForwarders.Clear();
-
-                foreach (var forwarder in proxyForwarders)
-                {
-                    try { await forwarder.DisposeAsync(); }
-                    catch { }
-                }
-            }
-            catch { }
-
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                try
-                {
-                    if (Connection != null)
-                        Connection.Dispose();
-                }
-                catch { }
-
-                try
-                {
-                    var targets = _targets.ToList();
-                    _targets.Clear();
-
-                    foreach (var target in targets)
-                    {
-                        try { target.Dispose(); }
-                        catch { }
-                    }
-                }
-                catch { }
-
-                try
-                {
-                    var proxyForwarders = _proxyForwarders.ToList();
-                    _proxyForwarders.Clear();
-
-                    foreach (var forwarder in proxyForwarders)
-                    {
-                        try { forwarder.Dispose(); }
-                        catch { }
-                    }
-                }
-                catch { }
-
-                if (_process != null && !_process.HasExited)
-                {
-                    try
-                    {
-                        _process.Kill(true);
-                        _process.Dispose();
-                        Console.WriteLine($"Killed browser with pid {_process.Id} successfully.");
-                    }
-                    catch { }
-                    _process = null;
-                    _processPid = null;
-                }
-
-                //if (Config != null)
-                //{
-                //    var userDataDir = Config.UserDataDir;
-                //    if (!Config.CustomDataDir)
-                //    {
-                //        for (var i = 0; i < 5; i++)
-                //        {
-                //            try
-                //            {
-                //                if (!string.IsNullOrWhiteSpace(userDataDir))
-                //                {
-                //                    if (Directory.Exists(userDataDir))
-                //                        Directory.Delete(userDataDir, true);
-                //                    Console.WriteLine($"Successfully removed temp data dir {userDataDir}");
-                //                }
-                //                break;
-                //            }
-                //            catch (Exception ex)
-                //            {
-                //                if (i == 4)
-                //                    Console.WriteLine(
-                //                        $"Problem removing temp data dir {userDataDir}\n" +
-                //                        $"Consider checking whether it's there and remove it by hand\n" +
-                //                        $"Error: {ex.Message}");
-                //                System.Threading.Thread.Sleep(150);
-                //            }
-                //        }
-                //    }
-                //}
-            }
-        }
-
         /// <summary>
         /// Allows to get `Tab` instances by using browser[0], browser[1].
         /// </summary>
@@ -648,6 +521,264 @@ namespace NoDriver.Core.Runtime
                         return t;
                 }
                 return Tabs[0];
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await DisposeAsyncCore();
+            Dispose(false);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual async ValueTask DisposeAsyncCore()
+        {
+            try
+            {
+                if (Connection != null)
+                    await Connection.DisposeAsync();
+            }
+            catch { }
+
+            await ClearTargetsAsync();
+            await ClearProxyForwardersAsync();
+            await ClearBrowserProcessAsync();
+            await ClearUserDataDirAsync();
+            await ClearTempExtensionDirAsync();
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try { Connection?.Dispose(); }
+                catch { }
+
+                ClearTargets();
+                ClearProxyForwarders();
+                ClearBrowserProcess();
+                ClearUserDataDir();
+                ClearTempExtensionDir();
+            }
+        }
+
+        private async Task ClearTargetsAsync()
+        {
+            try
+            {
+                var targets = _targets.ToList();
+                _targets.Clear();
+                foreach (var target in targets)
+                {
+                    try { await target.DisposeAsync(); }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private void ClearTargets()
+        {
+            try
+            {
+                var targets = _targets.ToList();
+                _targets.Clear();
+                foreach (var target in targets)
+                {
+                    try { target.Dispose(); }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private async Task ClearProxyForwardersAsync()
+        {
+            try
+            {
+                var proxyForwarders = _proxyForwarders.ToList();
+                _proxyForwarders.Clear();
+                foreach (var forwarder in proxyForwarders)
+                {
+                    try { await forwarder.DisposeAsync(); }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private void ClearProxyForwarders()
+        {
+            try
+            {
+                var proxyForwarders = _proxyForwarders.ToList();
+                _proxyForwarders.Clear();
+                foreach (var forwarder in proxyForwarders)
+                {
+                    try { forwarder.Dispose(); }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private async Task ClearBrowserProcessAsync()
+        {
+            if (_process != null && !_process.HasExited)
+            {
+                try
+                {
+                    if (!_process.HasExited)
+                    {
+                        _process.Kill(true);
+                        await _process.WaitForExitAsync();
+                    }
+                    _process.Dispose();
+                    Console.WriteLine($"Killed browser with pid {_process.Id} successfully.");
+                }
+                catch { }
+                _process = null;
+                _processPid = null;
+            }
+        }
+
+        private void ClearBrowserProcess()
+        {
+            if (_process != null && !_process.HasExited)
+            {
+                try
+                {
+                    if (!_process.HasExited)
+                    {
+                        _process.Kill(true);
+                        _process.WaitForExit();
+                    }
+                    _process.Dispose();
+                    Console.WriteLine($"Killed browser with pid {_process.Id} successfully.");
+                }
+                catch { }
+                _process = null;
+                _processPid = null;
+            }
+        }
+
+        private async Task ClearUserDataDirAsync()
+        {
+            if (Config != null && !Config.CustomDataDir && !string.IsNullOrWhiteSpace(Config.UserDataDir))
+            {
+                var userDataDir = Config.UserDataDir;
+
+                for (var i = 0; i < 5; i++)
+                {
+                    try
+                    {
+                        if (Directory.Exists(userDataDir))
+                            Directory.Delete(userDataDir, true);
+                        Console.WriteLine($"Successfully removed temp data dir {userDataDir}");
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        if (i == 4)
+                            Console.WriteLine(
+                                $"Problem removing temp data dir {userDataDir}\n" +
+                                $"Consider checking whether it's there and remove it by hand\n" +
+                                $"Error: {ex.Message}");
+                        else
+                            await Task.Delay(150);
+                    }
+                }
+            }
+        }
+
+        private void ClearUserDataDir()
+        {
+            if (Config != null && !Config.CustomDataDir && !string.IsNullOrWhiteSpace(Config.UserDataDir))
+            {
+                var userDataDir = Config.UserDataDir;
+
+                try
+                {
+                    if (Directory.Exists(userDataDir))
+                        Directory.Delete(userDataDir, true);
+                    Console.WriteLine($"Successfully removed temp data dir {userDataDir}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(
+                        $"Problem removing temp data dir {userDataDir}\n" +
+                        $"Consider checking whether it's there and remove it by hand\n" +
+                        $"Error: {ex.Message}");
+                }
+            }
+        }
+
+        private async Task ClearTempExtensionDirAsync()
+        {
+            if (Config != null)
+            {
+                var tempExtensionDirs = Config.TempExtensionDirs.ToList();
+
+                foreach (var tempDir in tempExtensionDirs)
+                {
+                    if (!string.IsNullOrWhiteSpace(tempDir))
+                    {
+                        for (var i = 0; i < 5; i++)
+                        {
+                            try
+                            {
+                                if (Directory.Exists(tempDir))
+                                    Directory.Delete(tempDir, true);
+                                Console.WriteLine($"Successfully removed temp extension dir {tempDir}");
+                                break;
+                            }
+                            catch (Exception ex)
+                            {
+                                if (i == 4)
+                                    Console.WriteLine(
+                                        $"Problem removing temp extension dir {tempDir}\n" +
+                                        $"Consider checking whether it's there and remove it by hand\n" +
+                                        $"Error: {ex.Message}");
+                                else
+                                    await Task.Delay(150);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private void ClearTempExtensionDir()
+        {
+            if (Config != null)
+            {
+                var tempExtensionDirs = Config.TempExtensionDirs.ToList();
+
+                foreach (var tempDir in tempExtensionDirs)
+                {
+                    if (!string.IsNullOrWhiteSpace(tempDir))
+                    {
+                        try
+                        {
+                            if (Directory.Exists(tempDir))
+                                Directory.Delete(tempDir, true);
+                            Console.WriteLine($"Successfully removed temp extension dir {tempDir}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(
+                                $"Problem removing temp extension dir {tempDir}\n" +
+                                $"Consider checking whether it's there and remove it by hand\n" +
+                                $"Error: {ex.Message}");
+                        }
+                    }
+                }
             }
         }
     }

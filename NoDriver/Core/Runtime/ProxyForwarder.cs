@@ -27,8 +27,8 @@ namespace NoDriver.Core.Runtime
         public X509Certificate2Collection? ClientCertificates { get; private set; } = null;
         public RemoteCertificateValidationCallback? RemoteCertificateValidationCallback { get; private set; } = null;
 
-        public ProxyForwarder(string proxyServer, 
-            X509Certificate2Collection? clientCertificates = null, 
+        public ProxyForwarder(string proxyServer,
+            X509Certificate2Collection? clientCertificates = null,
             RemoteCertificateValidationCallback? remoteCertificateValidationCallback = null)
         {
             ProxyServer = "";
@@ -630,7 +630,7 @@ namespace NoDriver.Core.Runtime
                         if (upResponse[3] == ATYP_DNS)
                             await clientStream.WriteAsync(new byte[] { (byte)(addrLen - 2) }, token);
                         await clientStream.WriteAsync(upResponseAddr, token);
-                        
+
                         await PipeAsync(clientStream, remoteStream, token);
                     }
                 }
@@ -654,7 +654,7 @@ namespace NoDriver.Core.Runtime
                 while (count < limit)
                 {
                     var read = await stream.ReadAsync(buffer, count, 1, token);
-                    if (read == 0) 
+                    if (read == 0)
                         break;
 
                     var b = buffer[count];
@@ -687,7 +687,7 @@ namespace NoDriver.Core.Runtime
             while (count < size)
             {
                 var read = await stream.ReadAsync(buffer, count, size - count, token);
-                if (read == 0) 
+                if (read == 0)
                     throw new EndOfStreamException("Socket connection closed unexpectedly.");
                 count += read;
             }
@@ -718,16 +718,21 @@ namespace NoDriver.Core.Runtime
 
         public async ValueTask DisposeAsync()
         {
+            await DisposeAsyncCore();
+            Dispose(false);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual async ValueTask DisposeAsyncCore()
+        {
             try
             {
                 _cts.Cancel();
                 await _listenerTask;
             }
             catch { }
-
-            Dispose(true);
-            GC.SuppressFinalize(this);
-            await Task.CompletedTask;
+            _server?.Stop();
+            _cts.Dispose();
         }
 
         public void Dispose()
@@ -740,7 +745,11 @@ namespace NoDriver.Core.Runtime
         {
             if (disposing)
             {
-                _cts.Cancel();
+                try
+                {
+                    _cts.Cancel();
+                }
+                catch { }
                 _server?.Stop();
                 _cts.Dispose();
             }
