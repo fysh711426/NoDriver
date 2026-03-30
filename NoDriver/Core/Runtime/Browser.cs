@@ -640,7 +640,7 @@ namespace NoDriver.Core.Runtime
                         await _process.WaitForExitAsync();
                     }
                     _process.Dispose();
-                    Console.WriteLine($"Killed browser with pid {_process.Id} successfully.");
+                    Console.WriteLine($"Killed browser with pid {_processPid} successfully.");
                 }
                 catch { }
                 _process = null;
@@ -660,7 +660,7 @@ namespace NoDriver.Core.Runtime
                         _process.WaitForExit();
                     }
                     _process.Dispose();
-                    Console.WriteLine($"Killed browser with pid {_process.Id} successfully.");
+                    Console.WriteLine($"Killed browser with pid {_processPid} successfully.");
                 }
                 catch { }
                 _process = null;

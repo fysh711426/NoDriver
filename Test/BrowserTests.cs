@@ -258,5 +258,57 @@ namespace Test
             Assert.IsTrue(browserToDispose.Stopped, "執行 Dispose 後瀏覽器狀態應為已停止");
             Assert.AreEqual(0, browserToDispose.Targets.Count, "執行 Dispose 後 Targets 應被清空");
         }
+
+        [TestMethod]
+        public async Task DisposeAsync_ShouldKillProcess()
+        {
+            // Arrange
+            var config = new Config
+            {
+                Headless = true,
+                AutodiscoverTargets = true
+            };
+            var browserToDispose = await Browser.CreateAsync(config);
+
+            // 抓取 Process ID 稍後驗證
+            var processId = GetBrowserProcessId(browserToDispose);
+            Assert.IsTrue(processId.HasValue, "Browser 應啟動實際的 Process");
+
+            // Act
+            await browserToDispose.DisposeAsync();
+
+            // Assert: 確認 Process 被清除
+            Assert.ThrowsException<ArgumentException>(() => Process.GetProcessById(processId.Value));
+        }
+
+        [TestMethod]
+        public async Task Dispose_ShouldKillProcess()
+        {
+            // Arrange
+            var config = new Config
+            {
+                Headless = true,
+                AutodiscoverTargets = true
+            };
+            var browserToDispose = await Browser.CreateAsync(config);
+
+            // 抓取 Process ID 稍後驗證
+            var processId = GetBrowserProcessId(browserToDispose);
+            Assert.IsTrue(processId.HasValue, "Browser 應啟動實際的 Process");
+
+            // Act
+            browserToDispose.Dispose();
+
+            // Assert: 確認 Process 被清除
+            Assert.ThrowsException<ArgumentException>(() => Process.GetProcessById(processId.Value));
+        }
+
+        // 輔助方法：透過 Reflection 取得 private 的 _processPid 以驗證
+        private int? GetBrowserProcessId(Browser browser)
+        {
+            var field = typeof(Browser).GetField("_processPid",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            return (int?)field?.GetValue(browser);
+        }
     }
 }

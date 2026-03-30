@@ -598,5 +598,57 @@ namespace Test
             }
             return null;
         }
+
+        [TestMethod]
+        public async Task DisposeAsync_ShouldStopTcpListener_AndCancelTasks()
+        {
+            // Arrange: 建立一個 ProxyForwarder (使用一個假的遠端 Proxy)
+            var proxyForwarder = new ProxyForwarder("http://user:pass@127.0.0.1:8080");
+            var localPort = proxyForwarder.Port;
+
+            // 驗證 Port 已經被佔用 (連線應該會成功或被 Listener 接收)
+            Assert.IsTrue(IsPortInUse(localPort), "啟動後 Port 應該被佔用");
+
+            // Act
+            await proxyForwarder.DisposeAsync();
+
+            // Assert: 驗證 Port 已被釋放
+            Assert.IsFalse(IsPortInUse(localPort), "DisposeAsync 後 Port 應該被釋放");
+        }
+
+        [TestMethod]
+        public void Dispose_ShouldStopTcpListener_AndCancelTasks()
+        {
+            // Arrange
+            var proxyForwarder = new ProxyForwarder("socks5://user:pass@127.0.0.1:1080");
+            var localPort = proxyForwarder.Port;
+
+            // 驗證 Port 已經被佔用 (連線應該會成功或被 Listener 接收)
+            Assert.IsTrue(IsPortInUse(localPort), "啟動後 Port 應該被佔用");
+
+            // Act
+            proxyForwarder.Dispose();
+
+            // Assert
+            Assert.IsFalse(IsPortInUse(localPort), "Dispose 後 Port 應該被釋放");
+        }
+
+        // 輔助方法：檢查 Port 是否正在被監聽
+        private bool IsPortInUse(int port)
+        {
+            try
+            {
+                using (var listener = new TcpListener(IPAddress.Loopback, port))
+                {
+                    listener.Start();
+                    listener.Stop();
+                    return false;
+                }
+            }
+            catch (SocketException)
+            {
+                return true;
+            }
+        }
     }
 }

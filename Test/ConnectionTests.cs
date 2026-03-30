@@ -220,6 +220,8 @@ namespace Test
             // Arrange
             await _connection!.ConnectAsync();
 
+            Assert.IsFalse(_connection.Closed, "執行 DisposeAsync 前，連線應開啟");
+
             // Act
             await _connection.DisposeAsync();
 
@@ -228,10 +230,12 @@ namespace Test
         }
 
         [TestMethod]
-        public async Task Dispose_ShouldCleanUpResourcesSync()
+        public async Task Dispose_ShouldCleanUpResources()
         {
             // Arrange
             await _connection!.ConnectAsync();
+
+            Assert.IsFalse(_connection.Closed, "執行 Dispose 前，連線應開啟");
 
             // Act
             _connection.Dispose();
@@ -241,6 +245,35 @@ namespace Test
 
             // 防止重複 Dispose
             _connection = null;
+        }
+
+        [TestMethod]
+        public async Task DisposeAsync_ShouldCloseWebSocket_AndClearEnabledDomains()
+        {
+            // Arrange
+            var mainTab = _browser!.MainTab;
+            mainTab!.AddHandler<Cdp.Page.LoadEventFired>((e, _) => { });
+            await mainTab.SendAsync(Cdp.Target.GetTargets());
+
+            Assert.IsTrue(mainTab.EnabledDomains.Count > 0, "應自動向瀏覽器註冊並啟用對應的 Domain");
+            Assert.IsNotNull(mainTab.WebSocket, "執行 DisposeAsync 前，WebSocket 不應為 null");
+            
+            // Act
+            await mainTab.DisposeAsync();
+
+            // Assert
+            Assert.IsNull(mainTab.WebSocket, "執行 DisposeAsync 後，WebSocket 應為 null");
+            Assert.AreEqual(0, mainTab.EnabledDomains.Count, "執行 DisposeAsync 後，EnabledDomains 應為空");
+        }
+
+        [TestMethod]
+        public void Dispose_ShouldCancelBackgroundTasks_Safely()
+        {
+            // Act: 即使尚未連線，Dispose 也不應拋出例外
+            _connection!.Dispose();
+
+            // Assert
+            Assert.IsTrue(_connection.Closed, "執行 Dispose 後，連線應關閉");
         }
     }
 }
