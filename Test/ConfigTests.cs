@@ -11,7 +11,10 @@ namespace Test
         [TestInitialize]
         public void Setup()
         {
-            _config = new Config();
+            _config = new Config
+            {
+                Headless = true
+            };
         }
 
         [TestMethod]
@@ -120,8 +123,8 @@ namespace Test
             if (File.Exists(zipPath)) 
                 File.Delete(zipPath);
 
-            // 呼叫本身的方法來清理產生的暫存解壓縮檔
-            await ClearAsync();
+            // 呼叫 Browser.Dispose 來清理產生的暫存解壓縮檔
+            using (var browser = await Browser.CreateAsync(_config)) { }
         }
 
         [TestMethod]
@@ -166,8 +169,8 @@ namespace Test
             var tempDir = loadArg.Split('=').Last();
             Assert.IsTrue(Directory.Exists(tempDir), "清理前，解壓縮的暫存資料夾應該存在");
 
-            // Act
-            await ClearAsync();
+            // Act: 呼叫 Browser.DisposeAsync 來清理產生的暫存解壓縮檔
+            await using (var browser = await Browser.CreateAsync(_config)) { }
 
             // Assert
             Assert.IsFalse(Directory.Exists(tempDir), "執行後，解壓縮的暫存資料夾應該被刪除");
@@ -178,41 +181,6 @@ namespace Test
 
             if (File.Exists(zipPath))
                 File.Delete(zipPath);
-        }
-
-        private async Task ClearAsync()
-        {
-            if (_config != null)
-            {
-                var tempExtensionDirs = _config.TempExtensionDirs.ToList();
-
-                foreach (var tempDir in tempExtensionDirs)
-                {
-                    if (!string.IsNullOrWhiteSpace(tempDir))
-                    {
-                        for (var i = 0; i < 5; i++)
-                        {
-                            try
-                            {
-                                if (Directory.Exists(tempDir))
-                                    Directory.Delete(tempDir, true);
-                                Console.WriteLine($"Successfully removed temp extension dir {tempDir}");
-                                break;
-                            }
-                            catch (Exception ex)
-                            {
-                                if (i == 4)
-                                    Console.WriteLine(
-                                        $"Problem removing temp extension dir {tempDir}\n" +
-                                        $"Consider checking whether it's there and remove it by hand\n" +
-                                        $"Error: {ex.Message}");
-                                else
-                                    await Task.Delay(150);
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }

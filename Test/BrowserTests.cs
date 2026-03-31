@@ -310,5 +310,103 @@ namespace Test
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             return (int?)field?.GetValue(browser);
         }
+
+        [TestMethod]
+        public async Task DisposeAsync_ShouldClear_Default_UserDataDir()
+        {
+            // Arrange
+            var config = new Config
+            {
+                Headless = true,
+                AutodiscoverTargets = false
+            };
+            var browserToDispose = await Browser.CreateAsync(config);
+
+            Assert.IsTrue(Directory.Exists(config.UserDataDir), "預設應產生暫存的 UserDataDir");
+
+            // Act
+            await browserToDispose.DisposeAsync();
+
+            // Assert
+            Assert.IsFalse(Directory.Exists(config.UserDataDir), "執行 DisposeAsync 後 UserDataDir 應被刪除");
+        }
+
+        [TestMethod]
+        public async Task Dispose_ShouldClear_Default_UserDataDir()
+        {
+            // Arrange
+            var config = new Config
+            {
+                Headless = true,
+                AutodiscoverTargets = false
+            };
+            var browserToDispose = await Browser.CreateAsync(config);
+
+            Assert.IsTrue(Directory.Exists(config.UserDataDir), "預設應產生暫存的 UserDataDir");
+
+            // Act
+            browserToDispose.Dispose();
+
+            // Assert
+            Assert.IsFalse(Directory.Exists(config.UserDataDir), "執行 Dispose 後 UserDataDir 應被刪除");
+        }
+
+        [TestMethod]
+        public async Task DisposeAsync_ShouldClear_Custom_UserDataDir()
+        {
+            // Act
+            var customPath = Path.Combine(AppContext.BaseDirectory, $"test_UserDataDir");
+            Assert.IsFalse(Directory.Exists(customPath), "設定前 UserDataDir 不應存在");
+
+            var config = new Config
+            {
+                Headless = true,
+                AutodiscoverTargets = false,
+                UserDataDir = customPath
+            };
+            var browserToDispose = await Browser.CreateAsync(config);
+
+            Assert.IsTrue(Directory.Exists(config.UserDataDir), "設定的 UserDataDir 應存在");
+
+            // Act
+            await browserToDispose.DisposeAsync();
+
+            // Assert
+            Assert.IsTrue(config.CustomDataDir, "設定自訂路徑後，CustomDataDir 應為 true");
+            Assert.IsTrue(Directory.Exists(config.UserDataDir), "執行 Dispose 後 UserDataDir 不應被刪除");
+
+            // Cleanup
+            if (Directory.Exists(customPath))
+                Directory.Delete(customPath, true);
+        }
+
+        [TestMethod]
+        public async Task Dispose_ShouldClear_Custom_UserDataDir()
+        {
+            // Act
+            var customPath = Path.Combine(AppContext.BaseDirectory, $"test_UserDataDir");
+            Assert.IsFalse(Directory.Exists(customPath), "設定前 UserDataDir 不應存在");
+
+            var config = new Config
+            {
+                Headless = true,
+                AutodiscoverTargets = false,
+                UserDataDir = customPath
+            };
+            var browserToDispose = await Browser.CreateAsync(config);
+
+            Assert.IsTrue(Directory.Exists(config.UserDataDir), "設定的 UserDataDir 應存在");
+
+            // Act
+            browserToDispose.Dispose();
+
+            // Assert
+            Assert.IsTrue(config.CustomDataDir, "設定自訂路徑後，CustomDataDir 應為 true");
+            Assert.IsTrue(Directory.Exists(config.UserDataDir), "執行 Dispose 後 UserDataDir 不應被刪除");
+
+            // Cleanup
+            if (Directory.Exists(customPath))
+                Directory.Delete(customPath, true);
+        }
     }
 }
