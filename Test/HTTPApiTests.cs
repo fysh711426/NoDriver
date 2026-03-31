@@ -58,7 +58,7 @@ namespace Test
         {
             // Act & Assert
             // 測試我們封裝的 HTTP 客戶端是否有正確處理非 2xx 回應
-            await Assert.ThrowsExceptionAsync<HttpRequestException>(
+            await Assert.ThrowsAsync<HttpRequestException>(
                 async () => await _http!.GetAsync("this_endpoint_does_not_exist"));
         }
     }

@@ -1,4 +1,5 @@
-﻿using NoDriver.Core.Runtime;
+﻿using Microsoft.Extensions.Logging;
+using NoDriver.Core.Runtime;
 
 namespace Example
 {
@@ -6,36 +7,43 @@ namespace Example
     {
         public static async Task Main()
         {
-            await using (var browser = await Browser.CreateAsync())
+            using (var loggerFactory = LoggerFactory.Create(builder =>
+                builder.AddConsole().SetMinimumLevel(LogLevel.Debug)))
             {
-                var page = await browser.GetAsync("https://www.nowsecure.nl");
+                var logger = loggerFactory.CreateLogger<SomeImpression>();
 
-                await page.SaveScreenshotAsync();
-                await page.GetContentAsync();
-                await page.ScrollDownAsync(150);
-                var elems = await page.SelectAllAsync("*[src]");
-
-                foreach (var elem in elems)
+                var config = new Config { Logger = logger };
+                await using (var browser = await Browser.CreateAsync(config))
                 {
-                    await elem.FlashAsync();
-                }
+                    var page = await browser.GetAsync("https://www.nowsecure.nl");
 
-                var page2 = await browser.GetAsync("https://x.com", newTab: true);
-                var page3 = await browser.GetAsync("https://github.com/ultrafunkamsterdam/nodriver", newWindow: true);
+                    await page.SaveScreenshotAsync();
+                    await page.GetContentAsync();
+                    await page.ScrollDownAsync(150);
+                    var elems = await page.SelectAllAsync("*[src]");
 
-                var pages = new List<Tab>()
-                {
-                    page, page2, page3
-                };
+                    foreach (var elem in elems)
+                    {
+                        await elem.FlashAsync();
+                    }
 
-                foreach (var p in pages)
-                {
-                    await p.BringToFrontAsync();
-                    await p.ScrollDownAsync(200);
-                    await p.WaitAsync();
-                    await p.ReloadAsync();
-                    if (p != page3)
-                        await p.CloseAsync();
+                    var page2 = await browser.GetAsync("https://x.com", newTab: true);
+                    var page3 = await browser.GetAsync("https://github.com/ultrafunkamsterdam/nodriver", newWindow: true);
+
+                    var pages = new List<Tab>()
+                    {
+                        page, page2, page3
+                    };
+
+                    foreach (var p in pages)
+                    {
+                        await p.BringToFrontAsync();
+                        await p.ScrollDownAsync(200);
+                        await p.WaitAsync();
+                        await p.ReloadAsync();
+                        if (p != page3)
+                            await p.CloseAsync();
+                    }
                 }
             }
         }

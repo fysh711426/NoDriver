@@ -1,4 +1,5 @@
-﻿using NoDriver.Core.Messaging;
+﻿using Microsoft.Extensions.Logging;
+using NoDriver.Core.Messaging;
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
@@ -8,8 +9,9 @@ namespace NoDriver.Core.Runtime
 {
     public class Element : IEquatable<Element>
     {
+        private readonly ILogger? _logger;
         private readonly ConcurrentDictionary<string, string> _attrs = new(StringComparer.OrdinalIgnoreCase);
-
+        
         private Tab _tab;
         private Cdp.DOM.Node _node;
         private Cdp.DOM.Node? _tree;
@@ -60,7 +62,7 @@ namespace NoDriver.Core.Runtime
                     if (root.ShadowRootType == Cdp.DOM.ShadowRootType.OPEN)
                         if (root.Children != null)
                             foreach (var child in root.Children)
-                                yield return new Element(child, _tab);
+                                yield return new Element(child, _tab, null, _logger);
                 }
             }
         }
@@ -82,7 +84,7 @@ namespace NoDriver.Core.Runtime
                     throw new InvalidOperationException("Could not get parent since the element has no tree set.");
                 var parentNode = Util.FilterRecurse(Tree, n => n.NodeId == ParentId);
                 if (parentNode != null)
-                    return new Element(parentNode, _tab, _tree);
+                    return new Element(parentNode, _tab, _tree, _logger);
                 return null;
             }
         }
@@ -100,14 +102,14 @@ namespace NoDriver.Core.Runtime
                     if (frame?.ChildNodeCount > 0)
                         if (frame.Children != null)
                             foreach (var child in frame.Children)
-                                yield return new Element(child, _tab, frame);
+                                yield return new Element(child, _tab, frame, _logger);
                 }
                 else
                 {
                     if (_node.ChildNodeCount > 0)
                         if (_node.Children != null)
                             foreach (var child in _node.Children)
-                                yield return new Element(child, _tab, _tree);
+                                yield return new Element(child, _tab, _tree, _logger);
                 }
             }
         }
@@ -146,11 +148,12 @@ namespace NoDriver.Core.Runtime
         /// <param name="tree">The full node tree to which &lt;node&gt; belongs, enhances performance.<br/>
         /// When not provided, you need to call `await elem.UpdateAsync()` before using .Children / .Parent</param>
         /// <exception cref="ArgumentException"></exception>
-        public Element(Cdp.DOM.Node node, Tab tab, Cdp.DOM.Node? tree = null)
+        public Element(Cdp.DOM.Node node, Tab tab, Cdp.DOM.Node? tree = null, ILogger? logger = null)
         {
             if (node == null)
                 throw new ArgumentException("Node cannot be null.");
 
+            _logger = logger;
             _tab = tab;
             _node = node;
             _tree = tree;
@@ -223,7 +226,7 @@ namespace NoDriver.Core.Runtime
             var updatedNode = Util.FilterRecurse(doc, n => n.BackendNodeId == _node.BackendNodeId);
             if (updatedNode != null)
             {
-                Console.WriteLine("Node seems changed, and has now been updated.");
+                _logger?.LogDebug("Node seems changed, and has now been updated.");
                 _node = updatedNode;
             }
             _tree = doc;
@@ -237,7 +240,7 @@ namespace NoDriver.Core.Runtime
             {
                 var parentNode = Util.FilterRecurse(doc, n => n.NodeId == _node.ParentId);
                 if (parentNode != null)
-                    _parent = new Element(parentNode, _tab, _tree);
+                    _parent = new Element(parentNode, _tab, _tree, _logger);
             }
             return this;
         }
@@ -336,7 +339,7 @@ namespace NoDriver.Core.Runtime
             }
             catch (ArgumentOutOfRangeException)
             {
-                Console.WriteLine($"No content quads for {this}. Mostly caused by element not in plain sight.");
+                _logger?.LogDebug($"No content quads for {this}. Mostly caused by element not in plain sight.");
             }
             return null;
         }
@@ -378,11 +381,11 @@ namespace NoDriver.Core.Runtime
             var pos = await GetPositionAsync(token: token);
             if (pos?.Center == null)
             {
-                Console.WriteLine($"Could not calculate box model for {this}");
+                _logger?.LogWarning($"Could not calculate box model for {this}");
                 return;
             }
 
-            Console.WriteLine($"Clicking on location {pos.Center.X}, {pos.Center.Y}");
+            _logger?.LogDebug($"Clicking on location {pos.Center.X}, {pos.Center.Y}");
 
             await _tab.MouseClickAsync(pos.Center.X, pos.Center.Y, token: token);
             await _tab.FlashPointAsync(pos.Center.X, pos.Center.Y, token: token);
@@ -399,11 +402,11 @@ namespace NoDriver.Core.Runtime
             var pos = await GetPositionAsync(token: token);
             if (pos?.Center == null)
             {
-                Console.WriteLine($"Did not find location for {this}");
+                _logger?.LogDebug($"Did not find location for {this}");
                 return;
             }
 
-            Console.WriteLine($"Mouse move to location {pos.Center.X}, {pos.Center.Y} where {this} is located");
+            _logger?.LogDebug($"Mouse move to location {pos.Center.X}, {pos.Center.Y} where {this} is located");
 
             await _tab.MouseMoveAsync(pos.Center.X, pos.Center.Y, token: token);
         }
@@ -422,7 +425,7 @@ namespace NoDriver.Core.Runtime
             var endPos = await destElement.GetPositionAsync(token: token);
             if (endPos?.Center == null)
             {
-                Console.WriteLine($"Could not calculate box model for {destElement}");
+                _logger?.LogWarning($"Could not calculate box model for {destElement}");
                 return;
             }
             await MouseDragAsync(endPos.Center, false, steps, token);
@@ -443,7 +446,7 @@ namespace NoDriver.Core.Runtime
             var startPos = await GetPositionAsync(token: token);
             if (startPos?.Center == null)
             {
-                Console.WriteLine($"Could not calculate box model for {this}");
+                _logger?.LogWarning($"Could not calculate box model for {this}");
                 return;
             }
             await _tab.MouseDragAsync(startPos.Center, destPoint, relative, steps, token);
@@ -576,7 +579,7 @@ namespace NoDriver.Core.Runtime
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Could not scroll into view: {ex.Message}");
+                _logger?.LogDebug($"Could not scroll into view: {ex.Message}");
             }
         }
 
@@ -742,7 +745,7 @@ namespace NoDriver.Core.Runtime
             }
             catch
             {
-                Console.WriteLine("FlashAsync(): could not determine position.");
+                _logger?.LogDebug("FlashAsync(): could not determine position.");
                 return;
             }
 

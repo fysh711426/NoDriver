@@ -96,7 +96,7 @@ namespace Test
             Assert.IsTrue(tx.Task.IsFaulted, "收到錯誤回應時，狀態應變更為 Faulted");
 
             // 驗證 Task 是否拋出 ProtocolErrorException
-            await Assert.ThrowsExceptionAsync<ProtocolErrorException>(async () => await tx.Task);
+            await Assert.ThrowsAsync<ProtocolErrorException>(async () => await tx.Task);
         }
 
         [TestMethod]
@@ -112,7 +112,7 @@ namespace Test
             Assert.IsTrue(tx.HasException, "被取消時，HasException 應被設定為 true");
             Assert.IsTrue(tx.Task.IsFaulted, "被取消時，狀態應變更為 Faulted");
 
-            var ex = await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () => await tx.Task);
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () => await tx.Task);
             Assert.AreEqual("Force canceled", ex.Message, "異常訊息應與調用 Cancel 時傳入的訊息一致");
         }
 

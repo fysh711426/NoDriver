@@ -1,4 +1,5 @@
-﻿using NoDriver.Core.Messaging;
+﻿using Microsoft.Extensions.Logging;
+using NoDriver.Core.Messaging;
 using OpenCvSharp;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
@@ -64,8 +65,8 @@ namespace NoDriver.Core.Runtime
             }
         }
 
-        public Tab(string webSocketUrl, Cdp.Target.TargetInfo? target = null, Browser? browser = null) :
-            base(webSocketUrl, target, browser)
+        public Tab(string webSocketUrl, Cdp.Target.TargetInfo? target = null, Browser? browser = null, ILogger? logger = null) :
+            base(webSocketUrl, target, browser, logger)
         {
         }
 
@@ -400,7 +401,7 @@ namespace NoDriver.Core.Runtime
             {
                 var _node = Util.FilterRecurse(doc, n => n.NodeId == nid);
                 if (_node != null)
-                    items.Add(new Element(_node, this, doc));
+                    items.Add(new Element(_node, this, doc, _logger));
             }
             return items;
         }
@@ -468,7 +469,7 @@ namespace NoDriver.Core.Runtime
 
             var _node = Util.FilterRecurse(doc, n => n.NodeId == nodeId);
             if (_node != null)
-                return new Element(_node, this, doc);
+                return new Element(_node, this, doc, _logger);
             return null;
         }
 
@@ -511,7 +512,7 @@ namespace NoDriver.Core.Runtime
                         continue;
                 }
 
-                var elem = new Element(node, this, doc);
+                var elem = new Element(node, this, doc, _logger);
                 if (elem.NodeType == 3)
                 {
                     if (elem.Parent == null)
@@ -527,7 +528,7 @@ namespace NoDriver.Core.Runtime
             var iframes = Util.FilterRecurseAll(doc, n => n.NodeName == "IFRAME");
             foreach (var iframe in iframes)
             {
-                var iframeElem = new Element(iframe, this, iframe.ContentDocument);
+                var iframeElem = new Element(iframe, this, iframe.ContentDocument, _logger);
                 if (iframeElem.ContentDocument != null)
                 {
                     var textLower = text.ToLowerInvariant();
@@ -536,7 +537,7 @@ namespace NoDriver.Core.Runtime
 
                     foreach (var textNode in iframeTextNodes)
                     {
-                        var textElem = new Element(textNode, this, iframeElem.Tree);
+                        var textElem = new Element(textNode, this, iframeElem.Tree, _logger);
                         var parent = textElem.Parent;
                         if (parent != null)
                             items.Add(parent);
@@ -1049,7 +1050,7 @@ namespace NoDriver.Core.Runtime
                 if (!Directory.Exists(dirPath))
                     Directory.CreateDirectory(dirPath);
                 await SetDownloadPathAsync(dirPath, token);
-                Console.WriteLine($"No download path set, using default: {dirPath}");
+                _logger?.LogWarning($"No download path set, using default: {dirPath}");
             }
 
             if (string.IsNullOrWhiteSpace(filename))
@@ -1192,7 +1193,7 @@ namespace NoDriver.Core.Runtime
         public async Task<List<Element>> GetAllLinkedSourcesAsync(CancellationToken token = default)
         {
             var allAssets = await QuerySelectorAllAsync("a,link,img,script,meta", token: token);
-            return allAssets.Select(it => new Element(it.Node, this)).ToList();
+            return allAssets.Select(it => new Element(it.Node, this, null, _logger)).ToList();
         }
 
         /// <summary>

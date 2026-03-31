@@ -278,7 +278,7 @@ namespace Test
             await browserToDispose.DisposeAsync();
 
             // Assert: 確認 Process 被清除
-            Assert.ThrowsException<ArgumentException>(() => Process.GetProcessById(processId.Value));
+            Assert.Throws<ArgumentException>(() => Process.GetProcessById(processId.Value));
         }
 
         [TestMethod]
@@ -300,7 +300,7 @@ namespace Test
             browserToDispose.Dispose();
 
             // Assert: 確認 Process 被清除
-            Assert.ThrowsException<ArgumentException>(() => Process.GetProcessById(processId.Value));
+            Assert.Throws<ArgumentException>(() => Process.GetProcessById(processId.Value));
         }
 
         // 輔助方法：透過 Reflection 取得 private 的 _processPid 以驗證

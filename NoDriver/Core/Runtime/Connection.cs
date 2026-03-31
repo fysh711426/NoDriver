@@ -1,4 +1,5 @@
-﻿using NoDriver.Core.Messaging;
+﻿using Microsoft.Extensions.Logging;
+using NoDriver.Core.Messaging;
 using NoDriver.Core.Tools;
 using System.Buffers;
 using System.Collections.Concurrent;
@@ -12,6 +13,8 @@ namespace NoDriver.Core.Runtime
     public class Connection : IDisposable, IAsyncDisposable
     {
         private static readonly int _receiveBufferSize = 8192 * 4;
+
+        protected readonly ILogger? _logger;
 
         private int _messageIdCounter = 0;
         private CancellationTokenSource? _cts = null;
@@ -29,8 +32,9 @@ namespace NoDriver.Core.Runtime
         public bool Closed => 
             WebSocket == null || WebSocket.State != WebSocketState.Open;
 
-        public Connection(string webSocketUrl, Cdp.Target.TargetInfo? target = null, Browser? browser = null)
+        public Connection(string webSocketUrl, Cdp.Target.TargetInfo? target = null, Browser? browser = null, ILogger? logger = null)
         {
+            _logger = logger;
             WebSocketUrl = webSocketUrl;
             Target = target;
             Browser = browser;
@@ -60,7 +64,7 @@ namespace NoDriver.Core.Runtime
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception during opening of WebSocket: {ex.Message}");
+                _logger?.LogDebug($"Exception during opening of WebSocket: {ex.Message}");
                 throw;
             }
 
@@ -96,7 +100,7 @@ namespace NoDriver.Core.Runtime
                 _cts = null;
                 foreach (var (_, tx) in Mapper)
                     tx.Cancel(new ObjectDisposedException("Connection closed."));
-                Console.WriteLine($"Closed WebSocket connection to {WebSocketUrl}");
+                _logger?.LogDebug($"Closed WebSocket connection to {WebSocketUrl}");
             }
         }
 
@@ -232,7 +236,7 @@ namespace NoDriver.Core.Runtime
                     {
                         if (EnabledDomains.TryAdd(domainName, 1))
                         {
-                            Console.WriteLine($"Registered domain: {domainName}.");
+                            _logger?.LogDebug($"Registered domain: {domainName}.");
 
                             var type = Type.GetType($"NoDriver.Cdp.{domainName}");
                             if (type == null)
@@ -245,7 +249,7 @@ namespace NoDriver.Core.Runtime
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Failed to enable domain {domainName}. Error: {ex.Message}");
+                        _logger?.LogDebug($"Failed to enable domain {domainName}. Error: {ex.Message}");
                         EnabledDomains.TryRemove(domainName, out _);
                         activeDomains.Remove(domainName);
                     }
@@ -380,7 +384,7 @@ namespace NoDriver.Core.Runtime
             catch (WebSocketException) { }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error receiving websocket response: {ex.Message}");
+                _logger?.LogInformation($"Error receiving websocket response: {ex.Message}");
             }
             finally
             {
@@ -402,7 +406,10 @@ namespace NoDriver.Core.Runtime
                             throw new JsonException("ProtocolResponse is null or invalid.");
 
                         if (Mapper.TryRemove(response.Id, out var tx))
+                        {
                             tx.ProcessResponse(response);
+                            _logger?.LogTrace($"Got answer for (message_id:{tx.Id}) => {message}");
+                        }
                     }
                     else
                     {
@@ -431,7 +438,7 @@ namespace NoDriver.Core.Runtime
                                 catch (OperationCanceledException) { }
                                 catch (Exception ex)
                                 {
-                                    Console.WriteLine($"Exception in callback for event {eventName} => {ex.Message}");
+                                    _logger?.LogWarning($"Exception in callback for event {eventName} => {ex.Message}");
                                 }
                             }
                         }
@@ -441,11 +448,11 @@ namespace NoDriver.Core.Runtime
             catch (OperationCanceledException) { }
             catch (JsonException ex)
             {
-                Console.WriteLine($"Failed to parse protocol message. Error: {ex.Message}");
+                _logger?.LogInformation($"Failed to parse protocol message. Error: {ex.Message}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to processing protocol message. Error: {ex.Message}");
+                _logger?.LogInformation($"Failed to processing protocol message. Error: {ex.Message}");
             }
         }
 

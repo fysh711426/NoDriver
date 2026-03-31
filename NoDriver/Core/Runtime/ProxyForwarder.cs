@@ -1,4 +1,5 @@
-﻿using System.Buffers;
+﻿using Microsoft.Extensions.Logging;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Net;
 using System.Net.Security;
@@ -10,6 +11,8 @@ namespace NoDriver.Core.Runtime
 {
     public class ProxyForwarder : IDisposable, IAsyncDisposable
     {
+        private readonly ILogger? _logger;
+
         private TcpListener? _server;
         private Task _listenerTask = Task.CompletedTask;
         private CancellationTokenSource _cts = new CancellationTokenSource();
@@ -29,8 +32,11 @@ namespace NoDriver.Core.Runtime
 
         public ProxyForwarder(string proxyServer,
             X509Certificate2Collection? clientCertificates = null,
-            RemoteCertificateValidationCallback? remoteCertificateValidationCallback = null)
+            RemoteCertificateValidationCallback? remoteCertificateValidationCallback = null,
+            ILogger? logger = null)
         {
+            _logger = logger;
+
             ProxyServer = "";
             ClientCertificates = clientCertificates;
             RemoteCertificateValidationCallback = remoteCertificateValidationCallback;
@@ -66,8 +72,8 @@ namespace NoDriver.Core.Runtime
             else
                 ProxyServer = $"{Scheme}://{Host}:{Port}";
 
-            Console.WriteLine($"{Scheme} proxy with authentication is requested: {ProxyServer}");
-            Console.WriteLine($"Starting forward proxy on {Host}:{Port} which forwards to {ProxyServer}");
+            _logger?.LogInformation($"{Scheme} proxy with authentication is requested: {ProxyServer}");
+            _logger?.LogInformation($"Starting forward proxy on {Host}:{Port} which forwards to {ProxyServer}");
 
             _listenerTask = ListenLoopAsync(_cts.Token);
         }
@@ -95,13 +101,13 @@ namespace NoDriver.Core.Runtime
                     catch (OperationCanceledException) { }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Listener exception: {ex.Message}");
+                        _logger?.LogDebug($"Listener exception: {ex.Message}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to start listener: {ex.Message}");
+                _logger?.LogDebug($"Failed to start listener: {ex.Message}");
             }
             finally
             {
@@ -126,7 +132,7 @@ namespace NoDriver.Core.Runtime
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error handling request: {ex.Message}");
+                _logger?.LogDebug($"Error handling request: {ex.Message}");
             }
         }
 
@@ -147,7 +153,7 @@ namespace NoDriver.Core.Runtime
 
                     if (!line.StartsWith("CONNECT"))
                     {
-                        Console.WriteLine($"Non-CONNECT request received: {line.Trim()}");
+                        _logger?.LogWarning($"Non-CONNECT request received: {line.Trim()}");
                         await WriteTextAsync(clientStream, "HTTP/1.1 400 Bad Request\r\n\r\n", timeoutCts.Token);
                         return;
                     }
@@ -155,7 +161,7 @@ namespace NoDriver.Core.Runtime
                     var parts = line.Split(' ');
                     if (parts.Length < 2 || !parts[1].Contains(":"))
                     {
-                        Console.WriteLine($"Malformed CONNECT request: {line.Trim()}");
+                        _logger?.LogWarning($"Malformed CONNECT request: {line.Trim()}");
                         await WriteTextAsync(clientStream, "HTTP/1.1 400 Bad Request\r\n\r\n", timeoutCts.Token);
                         return;
                     }
@@ -200,13 +206,13 @@ namespace NoDriver.Core.Runtime
                             }
                             catch (OperationCanceledException)
                             {
-                                Console.WriteLine($"Timeout connecting to upstream proxy {FwHost}:{FwPort}");
+                                _logger?.LogError($"Timeout connecting to upstream proxy {FwHost}:{FwPort}");
                                 await WriteTextAsync(clientStream, "HTTP/1.1 504 Gateway Timeout\r\n\r\n", CancellationToken.None);
                                 return;
                             }
                             catch (Exception ex)
                             {
-                                Console.WriteLine($"Failed to connect to upstream proxy: {ex.Message}");
+                                _logger?.LogError($"Failed to connect to upstream proxy: {ex.Message}");
                                 await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n\r\n", CancellationToken.None);
                                 return;
                             }
@@ -228,7 +234,7 @@ namespace NoDriver.Core.Runtime
                                 var responseLine = await ReadLineAsync(remoteStream, MAX_LINE_LENGTH, timeoutCts.Token);
                                 if (string.IsNullOrEmpty(responseLine))
                                 {
-                                    Console.WriteLine("No response from upstream proxy.");
+                                    _logger?.LogError("No response from upstream proxy.");
                                     await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n\r\n", timeoutCts.Token);
                                     return;
                                 }
@@ -243,7 +249,7 @@ namespace NoDriver.Core.Runtime
 
                                 if (!responseLine.Contains(" 200 "))
                                 {
-                                    Console.WriteLine($"Upstream proxy rejected connection: {responseLine.Trim()}");
+                                    _logger?.LogError($"Upstream proxy rejected connection: {responseLine.Trim()}");
                                     await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n", timeoutCts.Token);
                                     await WriteTextAsync(clientStream, "Content-Type: text/plain\r\n", timeoutCts.Token);
                                     await WriteTextAsync(clientStream, "\r\n", timeoutCts.Token);
@@ -258,13 +264,13 @@ namespace NoDriver.Core.Runtime
                             }
                             catch (OperationCanceledException)
                             {
-                                Console.WriteLine("Timeout reading upstream proxy response.");
+                                _logger?.LogError("Timeout reading upstream proxy response.");
                                 await WriteTextAsync(clientStream, "HTTP/1.1 504 Gateway Timeout\r\n\r\n", CancellationToken.None);
                             }
                             catch (InvalidDataException ex)
                             {
                                 // 這裡應該要處理
-                                Console.WriteLine(ex.Message);
+                                _logger?.LogWarning(ex.Message);
                             }
                         }
                         finally
@@ -276,17 +282,17 @@ namespace NoDriver.Core.Runtime
                 }
                 catch (OperationCanceledException)
                 {
-                    Console.WriteLine("Client request timeout.");
+                    _logger?.LogWarning("Client request timeout.");
                     await WriteTextAsync(clientStream, "HTTP/1.1 408 Request Timeout\r\n\r\n", CancellationToken.None);
                 }
                 catch (InvalidDataException)
                 {
-                    Console.WriteLine("Oversized header line.");
+                    _logger?.LogWarning("Oversized header line.");
                     await WriteTextAsync(clientStream, "HTTP/1.1 431 Request Header Fields Too Large\r\n\r\n", CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error handling HTTP proxy request: {ex.Message}");
+                    _logger?.LogError($"Error handling HTTP proxy request: {ex.Message}");
                     await WriteTextAsync(clientStream, "HTTP/1.1 500 Internal Server Error\r\n\r\n", CancellationToken.None);
                 }
             }
@@ -315,7 +321,7 @@ namespace NoDriver.Core.Runtime
                     {
                         if (parts.Length < 2 || !parts[1].Contains(":"))
                         {
-                            Console.WriteLine($"Malformed CONNECT request: {line.Trim()}");
+                            _logger?.LogWarning($"Malformed CONNECT request: {line.Trim()}");
                             await WriteTextAsync(clientStream, "HTTP/1.1 400 Bad Request\r\n\r\n", timeoutCts.Token);
                             return;
                         }
@@ -371,13 +377,13 @@ namespace NoDriver.Core.Runtime
                             }
                             catch (OperationCanceledException)
                             {
-                                Console.WriteLine($"Timeout connecting to upstream proxy {FwHost}:{FwPort}");
+                                _logger?.LogError($"Timeout connecting to upstream proxy {FwHost}:{FwPort}");
                                 await WriteTextAsync(clientStream, "HTTP/1.1 504 Gateway Timeout\r\n\r\n", CancellationToken.None);
                                 return;
                             }
                             catch (Exception ex)
                             {
-                                Console.WriteLine($"Failed to connect to upstream proxy: {ex.Message}");
+                                _logger?.LogError($"Failed to connect to upstream proxy: {ex.Message}");
                                 await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n\r\n", CancellationToken.None);
                                 return;
                             }
@@ -405,7 +411,7 @@ namespace NoDriver.Core.Runtime
                                     var responseLine = await ReadLineAsync(remoteStream, MAX_LINE_LENGTH, timeoutCts.Token);
                                     if (string.IsNullOrEmpty(responseLine))
                                     {
-                                        Console.WriteLine("No response from upstream proxy.");
+                                        _logger?.LogError("No response from upstream proxy.");
                                         await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n\r\n", timeoutCts.Token);
                                         return;
                                     }
@@ -420,7 +426,7 @@ namespace NoDriver.Core.Runtime
 
                                     if (!responseLine.Contains(" 200 "))
                                     {
-                                        Console.WriteLine($"Upstream proxy rejected connection: {responseLine.Trim()}");
+                                        _logger?.LogError($"Upstream proxy rejected connection: {responseLine.Trim()}");
                                         await WriteTextAsync(clientStream, "HTTP/1.1 502 Bad Gateway\r\n", timeoutCts.Token);
                                         await WriteTextAsync(clientStream, "Content-Type: text/plain\r\n", timeoutCts.Token);
                                         await WriteTextAsync(clientStream, "\r\n", timeoutCts.Token);
@@ -451,13 +457,13 @@ namespace NoDriver.Core.Runtime
                             }
                             catch (OperationCanceledException)
                             {
-                                Console.WriteLine("Timeout reading upstream proxy response.");
+                                _logger?.LogError("Timeout reading upstream proxy response.");
                                 await WriteTextAsync(clientStream, "HTTP/1.1 504 Gateway Timeout\r\n\r\n", CancellationToken.None);
                             }
                             catch (InvalidDataException ex)
                             {
                                 // 這裡應該要處理
-                                Console.WriteLine(ex.Message);
+                                _logger?.LogWarning(ex.Message);
                             }
                         }
                         finally
@@ -469,17 +475,17 @@ namespace NoDriver.Core.Runtime
                 }
                 catch (OperationCanceledException)
                 {
-                    Console.WriteLine("Client request timeout.");
+                    _logger?.LogWarning("Client request timeout.");
                     await WriteTextAsync(clientStream, "HTTP/1.1 408 Request Timeout\r\n\r\n", CancellationToken.None);
                 }
                 catch (InvalidDataException)
                 {
-                    Console.WriteLine("Oversized header line.");
+                    _logger?.LogWarning("Oversized header line.");
                     await WriteTextAsync(clientStream, "HTTP/1.1 431 Request Header Fields Too Large\r\n\r\n", CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error handling HTTP proxy request: {ex.Message}");
+                    _logger?.LogError($"Error handling HTTP proxy request: {ex.Message}");
                     await WriteTextAsync(clientStream, "HTTP/1.1 500 Internal Server Error\r\n\r\n", CancellationToken.None);
                 }
             }
@@ -504,7 +510,7 @@ namespace NoDriver.Core.Runtime
                 }
                 catch
                 {
-                    Console.WriteLine("Failed to read Socks header.");
+                    _logger?.LogDebug("Failed to read Socks header.");
                     return;
                 }
 
@@ -637,11 +643,11 @@ namespace NoDriver.Core.Runtime
             }
             catch (OperationCanceledException)
             {
-                Console.WriteLine("Socks handling canceled.");
+                _logger?.LogWarning("Socks handling canceled.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error handling Socks proxy request: {ex.Message}");
+                _logger?.LogError($"Error handling Socks proxy request: {ex.Message}");
             }
         }
 
@@ -696,6 +702,8 @@ namespace NoDriver.Core.Runtime
 
         private async Task PipeAsync(Stream client, Stream remote, CancellationToken token)
         {
+            _logger?.LogDebug("Client proxy to authenticated proxy pipe.");
+
             using (var cts = CancellationTokenSource.CreateLinkedTokenSource(token))
             {
                 var task1 = client.CopyToAsync(remote, cts.Token);
@@ -711,7 +719,7 @@ namespace NoDriver.Core.Runtime
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Piping error: {ex.Message}");
+                    _logger?.LogDebug($"Piping error: {ex.Message}");
                 }
             }
         }

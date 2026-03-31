@@ -58,17 +58,17 @@ namespace Test
         public void AddArgument_ForbiddenArgument_ThrowsArgumentException()
         {
             // Act & Assert
-            Assert.ThrowsException<ArgumentException>(() => _config!.AddArgument("headless"));
-            Assert.ThrowsException<ArgumentException>(() => _config!.AddArgument("--data-dir=C:\\"));
-            Assert.ThrowsException<ArgumentException>(() => _config!.AddArgument("no-sandbox"));
-            Assert.ThrowsException<ArgumentException>(() => _config!.AddArgument("lang=zh-TW"));
+            Assert.Throws<ArgumentException>(() => _config!.AddArgument("headless"));
+            Assert.Throws<ArgumentException>(() => _config!.AddArgument("--data-dir=C:\\"));
+            Assert.Throws<ArgumentException>(() => _config!.AddArgument("no-sandbox"));
+            Assert.Throws<ArgumentException>(() => _config!.AddArgument("lang=zh-TW"));
         }
 
         [TestMethod]
         public void AddExtension_NonExistentPath_ThrowsFileNotFoundException()
         {
             // Act & Assert
-            Assert.ThrowsException<FileNotFoundException>(() => _config!.AddExtension("fake_path_that_does_not_exist"));
+            Assert.Throws<FileNotFoundException>(() => _config!.AddExtension("fake_path_that_does_not_exist"));
         }
 
         [TestMethod]

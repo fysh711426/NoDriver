@@ -1,4 +1,5 @@
-﻿using NoDriver.Core.Tools;
+﻿using Microsoft.Extensions.Logging;
+using NoDriver.Core.Tools;
 using System.Globalization;
 using System.IO.Compression;
 
@@ -38,6 +39,8 @@ namespace NoDriver.Core.Runtime
 
         private string _userDataDir = "";
         private bool _customDataDir = true;
+
+        public ILogger? Logger { get; set; } = null;
 
         /// <summary>
         /// The data directory to use.
@@ -118,7 +121,7 @@ namespace NoDriver.Core.Runtime
             //----- Sandbox -----
             if (PlatformHelper.IsPosix() && PlatformHelper.IsRoot() && Sandbox)
             {
-                Console.WriteLine("Detected root usage, auto disabling sandbox mode.");
+                Logger?.LogInformation("Detected root usage, auto disabling sandbox mode.");
                 Sandbox = false;
             }
             //----- Sandbox -----

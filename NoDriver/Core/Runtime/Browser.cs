@@ -1,7 +1,9 @@
-﻿using NoDriver.Core.Tools;
+﻿using Microsoft.Extensions.Logging;
+using NoDriver.Core.Tools;
 using System.Diagnostics;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -36,13 +38,14 @@ namespace NoDriver.Core.Runtime
         private readonly ConcurrentList<Tab> _targets = new();
         private readonly ConcurrentList<ProxyForwarder> _proxyForwarders = new();
 
+        private readonly ILogger? _logger;
+        private readonly Lazy<CookieJar> _cookies;
+
         private Process? _process = null;
         private int? _processPid = null;
         private HTTPApi? _http = null;
 
-        private Lazy<CookieJar> _cookies;
-
-        public Config? Config { get; private set; } = null;
+        public Config Config { get; private set; }
         public Connection? Connection { get; private set; } = null;
         public JsonNode? Info { get; private set; } = null;
 
@@ -73,8 +76,10 @@ namespace NoDriver.Core.Runtime
 
         public bool Stopped => _process == null || _process.HasExited;
 
-        private Browser()
+        private Browser(Config config)
         {
+            Config = config;
+            _logger = config.Logger;
             _cookies = new(() => new CookieJar(this));
         }
 
@@ -86,8 +91,8 @@ namespace NoDriver.Core.Runtime
         /// <returns></returns>
         public static async Task<Browser> CreateAsync(Config? config = null, CancellationToken token = default)
         {
-            var browser = new Browser();
-            browser.Config = config ?? new();
+            config = config ?? new();
+            var browser = new Browser(config);
             return await browser.StartAsync(token);
         }
 
@@ -107,7 +112,7 @@ namespace NoDriver.Core.Runtime
             {
                 if (_process?.HasExited == true)
                     return await CreateAsync(Config, token);
-                Console.WriteLine("Ignored! This call has no effect when already running.");
+                _logger?.LogWarning("Ignored! This call has no effect when already running.");
                 return this;
             }
 
@@ -121,7 +126,7 @@ namespace NoDriver.Core.Runtime
             var exePath = Config.BrowserExecutablePath;
             if (!connectExisting)
             {
-                Console.WriteLine($"BROWSER EXECUTABLE PATH: {exePath}");
+                _logger?.LogDebug($"BROWSER EXECUTABLE PATH: {exePath}");
                 if (!File.Exists(exePath))
                     throw new FileNotFoundException("Could not determine browser executable.");
             }
@@ -132,7 +137,7 @@ namespace NoDriver.Core.Runtime
             //    .Aggregate("", (r, it) => r + " " +
             //        (it.Contains(" ") ? $"\"{it}\"" : it));
 
-            Console.WriteLine($"starting\n\texecutable: {exePath}\n\narguments: \n\t{string.Join("\n\t", args)}");
+            _logger?.LogInformation($"starting\n\texecutable: {exePath}\n\narguments: \n\t{string.Join("\n\t", args)}");
 
             if (!connectExisting)
             {
@@ -162,7 +167,7 @@ namespace NoDriver.Core.Runtime
                 catch
                 {
                     if (i == 4)
-                        Console.WriteLine("Could not start or connect to browser.");
+                        _logger?.LogDebug("Could not start or connect to browser.");
                     await Task.Delay(TimeSpan.FromSeconds(0.5), token);
                 }
             }
@@ -170,11 +175,11 @@ namespace NoDriver.Core.Runtime
             if (Info == null)
                 throw new Exception("Failed to connect to browser. If running as root in Linux, you may need Sandbox=false.");
 
-            Connection = new Connection(WebSocketUrl, browser: this);
+            Connection = new Connection(WebSocketUrl, browser: this, logger: _logger);
 
             if (Config.AutodiscoverTargets)
             {
-                Console.WriteLine("Enabling autodiscover targets.");
+                _logger?.LogInformation("Enabling autodiscover targets.");
 
                 Connection.AddHandler<Cdp.Target.TargetInfoChanged>((e, tab) => HandleTargetInfoChanged(e));
                 Connection.AddHandler<Cdp.Target.TargetCreated>((e, tab) => HandleTargetCreated(e));
@@ -257,16 +262,14 @@ namespace NoDriver.Core.Runtime
             var target = _targets.FirstOrDefault(it => it.Target?.TargetId == targetInfo.TargetId);
             if (target != null)
             {
-                //if (logger.IsEnabled(LogLevel.Debug))
-                //{
-                //    var sb = new StringBuilder();
-                //    var changes = Util.CompareTargetInfo(target.Target, targetInfo);
-                //    foreach (var change in changes)
-                //    {
-                //        sb.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
-                //    }
-                //    Console.WriteLine($"Target #{_targets.IndexOf(target)} has changed: {sb.ToString()}");
-                //}
+                if (_logger?.IsEnabled(LogLevel.Debug) == true)
+                {
+                    var sb = new StringBuilder();
+                    var changes = Util.CompareTargetInfo(target.Target, targetInfo);
+                    foreach (var change in changes)
+                        sb.Append($"\n{change.Key}: {change.Old} => {change.New}\n");
+                    _logger?.LogDebug($"Target #{_targets.IndexOf(target)} has changed: {sb.ToString()}");
+                }
                 target.Target = targetInfo;
             }
             await UpdateTargetsAsync();
@@ -283,11 +286,11 @@ namespace NoDriver.Core.Runtime
             if (Config?.Host != null && Config?.Port != null)
             {
                 var newTarget = new Tab(
-                    $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId.Value}", targetInfo, this);
+                    $"ws://{Config.Host}:{Config.Port}/devtools/{targetInfo.Type ?? "page"}/{targetInfo.TargetId.Value}", targetInfo, this, _logger);
                 _targets.AddIfNotExist(
                     it => it.Target?.TargetId == targetInfo.TargetId,
                     () => newTarget);
-                Console.WriteLine($"Target #{_targets.Count - 1} created => {newTarget.ToString()}");
+                _logger?.LogDebug($"Target #{_targets.Count - 1} created => {newTarget.ToString()}");
             }
             await UpdateTargetsAsync();
         }
@@ -302,7 +305,7 @@ namespace NoDriver.Core.Runtime
             var target = _targets.FirstOrDefault(it => it.Target?.TargetId == destroyed.TargetId);
             if (target != null)
             {
-                Console.WriteLine($"Target removed. id #{_targets.IndexOf(target)} => {target.ToString()}");
+                _logger?.LogDebug($"Target removed. id #{_targets.IndexOf(target)} => {target.ToString()}");
                 if (_targets.Remove(target))
                 {
                     try { await target.DisposeAsync(); }
@@ -360,7 +363,7 @@ namespace NoDriver.Core.Runtime
             if (!string.IsNullOrWhiteSpace(proxyServer))
             {
                 var forwarder = new ProxyForwarder(proxyServer,
-                    clientCertificates, remoteCertificateValidationCallback);
+                    clientCertificates, remoteCertificateValidationCallback, _logger);
                 _proxyForwarders.Add(forwarder);
                 proxyServer = forwarder.ProxyServer;
             }
@@ -458,7 +461,7 @@ namespace NoDriver.Core.Runtime
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"Could not set window size. exception => {ex.Message}");
+                            _logger?.LogInformation($"Could not set window size. exception => {ex.Message}");
                             continue;
                         }
                     }
@@ -488,7 +491,7 @@ namespace NoDriver.Core.Runtime
                             _targets.AddIfNotExist(
                                 it => it.Target?.TargetId == targetInfo.TargetId,
                                 () => new Tab(
-                                    $"ws://{Config.Host}:{Config.Port}/devtools/page/{targetInfo.TargetId.Value}", targetInfo, this));
+                                    $"ws://{Config.Host}:{Config.Port}/devtools/page/{targetInfo.TargetId.Value}", targetInfo, this, _logger));
                         }
                     }
                 }
@@ -640,7 +643,7 @@ namespace NoDriver.Core.Runtime
                         await _process.WaitForExitAsync();
                     }
                     _process.Dispose();
-                    Console.WriteLine($"Killed browser with pid {_processPid} successfully.");
+                    _logger?.LogInformation($"Killed browser with pid {_processPid} successfully.");
                 }
                 catch { }
                 _process = null;
@@ -660,7 +663,7 @@ namespace NoDriver.Core.Runtime
                         _process.WaitForExit();
                     }
                     _process.Dispose();
-                    Console.WriteLine($"Killed browser with pid {_processPid} successfully.");
+                    _logger?.LogInformation($"Killed browser with pid {_processPid} successfully.");
                 }
                 catch { }
                 _process = null;
@@ -680,13 +683,13 @@ namespace NoDriver.Core.Runtime
                     {
                         if (Directory.Exists(userDataDir))
                             Directory.Delete(userDataDir, true);
-                        Console.WriteLine($"Successfully removed temp data dir {userDataDir}");
+                        _logger?.LogInformation($"Successfully removed temp data dir {userDataDir}");
                         break;
                     }
                     catch (Exception ex)
                     {
                         if (i == 4)
-                            Console.WriteLine(
+                            _logger?.LogDebug(
                                 $"Problem removing temp data dir {userDataDir}\n" +
                                 $"Consider checking whether it's there and remove it by hand\n" +
                                 $"Error: {ex.Message}");
@@ -707,11 +710,11 @@ namespace NoDriver.Core.Runtime
                 {
                     if (Directory.Exists(userDataDir))
                         Directory.Delete(userDataDir, true);
-                    Console.WriteLine($"Successfully removed temp data dir {userDataDir}");
+                    _logger?.LogInformation($"Successfully removed temp data dir {userDataDir}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(
+                    _logger?.LogDebug(
                         $"Problem removing temp data dir {userDataDir}\n" +
                         $"Consider checking whether it's there and remove it by hand\n" +
                         $"Error: {ex.Message}");
@@ -735,13 +738,13 @@ namespace NoDriver.Core.Runtime
                             {
                                 if (Directory.Exists(tempDir))
                                     Directory.Delete(tempDir, true);
-                                Console.WriteLine($"Successfully removed temp extension dir {tempDir}");
+                                _logger?.LogInformation($"Successfully removed temp extension dir {tempDir}");
                                 break;
                             }
                             catch (Exception ex)
                             {
                                 if (i == 4)
-                                    Console.WriteLine(
+                                    _logger?.LogDebug(
                                         $"Problem removing temp extension dir {tempDir}\n" +
                                         $"Consider checking whether it's there and remove it by hand\n" +
                                         $"Error: {ex.Message}");
@@ -768,11 +771,11 @@ namespace NoDriver.Core.Runtime
                         {
                             if (Directory.Exists(tempDir))
                                 Directory.Delete(tempDir, true);
-                            Console.WriteLine($"Successfully removed temp extension dir {tempDir}");
+                            _logger?.LogInformation($"Successfully removed temp extension dir {tempDir}");
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine(
+                            _logger?.LogDebug(
                                 $"Problem removing temp extension dir {tempDir}\n" +
                                 $"Consider checking whether it's there and remove it by hand\n" +
                                 $"Error: {ex.Message}");

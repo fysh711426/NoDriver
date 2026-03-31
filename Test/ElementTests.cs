@@ -416,7 +416,7 @@ namespace Test
             await _tab.WaitAsync(0.5);
 
             // Act: 當 display: none 時，getContentQuads 通常會找不到 Quads
-            var exception = await Assert.ThrowsExceptionAsync<Exception>(async () => await btn.GetPositionAsync());
+            var exception = await Assert.ThrowsAsync<Exception>(async () => await btn.GetPositionAsync());
 
             // Assert
             Assert.IsTrue(exception.Message.Contains("Could not find position"), "隱藏元素應該無法取得位置資訊，拋出例外");
@@ -670,7 +670,7 @@ namespace Test
             var parent = await _tab!.SelectAsync("#parent");
 
             // Act & Assert: 根據你的程式碼，ChildNodeCount != 1 且非 NodeType 3 應拋出例外
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () => await parent!.SetTextAsync("This should fail"));
+            await Assert.ThrowsAsync<InvalidOperationException>(async () => await parent!.SetTextAsync("This should fail"));
         }
 
         [TestMethod]
