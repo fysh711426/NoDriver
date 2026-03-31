@@ -11,11 +11,11 @@ namespace NoDriver.Core.Runtime
 {
     public class ProxyForwarder : IDisposable, IAsyncDisposable
     {
-        private readonly ILogger? _logger;
-
         private TcpListener? _server;
         private Task _listenerTask = Task.CompletedTask;
         private CancellationTokenSource _cts = new CancellationTokenSource();
+
+        protected readonly ILogger? _logger;
 
         public string Host { get; private set; } = "";
         public int Port { get; private set; } = 0;

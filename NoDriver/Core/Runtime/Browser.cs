@@ -38,12 +38,13 @@ namespace NoDriver.Core.Runtime
         private readonly ConcurrentList<Tab> _targets = new();
         private readonly ConcurrentList<ProxyForwarder> _proxyForwarders = new();
 
-        private readonly ILogger? _logger;
         private readonly Lazy<CookieJar> _cookies;
 
         private Process? _process = null;
         private int? _processPid = null;
         private HTTPApi? _http = null;
+
+        protected readonly ILogger? _logger;
 
         public Config Config { get; private set; }
         public Connection? Connection { get; private set; } = null;

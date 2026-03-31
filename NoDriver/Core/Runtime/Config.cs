@@ -40,7 +40,7 @@ namespace NoDriver.Core.Runtime
         private string _userDataDir = "";
         private bool _customDataDir = true;
 
-        public ILogger? Logger { get; set; } = null;
+        public ILogger? Logger { get; private set; }
 
         /// <summary>
         /// The data directory to use.
@@ -89,8 +89,10 @@ namespace NoDriver.Core.Runtime
         public Dictionary<string, object> Attributes { get; } = new();
         public IReadOnlyList<string> TempExtensionDirs => _tempExtensionDirs.AsReadOnly();
 
-        public Config()
+        public Config(ILogger? logger = null)
         {
+            Logger = logger;
+
             //----- UserDataDir -----
             if (string.IsNullOrWhiteSpace(UserDataDir))
             {

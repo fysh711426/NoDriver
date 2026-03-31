@@ -9,7 +9,6 @@ namespace NoDriver.Core.Runtime
 {
     public class Element : IEquatable<Element>
     {
-        private readonly ILogger? _logger;
         private readonly ConcurrentDictionary<string, string> _attrs = new(StringComparer.OrdinalIgnoreCase);
         
         private Tab _tab;
@@ -19,6 +18,8 @@ namespace NoDriver.Core.Runtime
         private Cdp.Runtime.RemoteObject? _remoteObject = null;
         
         private bool _isHighlighted = false;
+
+        protected readonly ILogger? _logger;
 
         public string Tag => NodeName.ToLowerInvariant();
         public string TagName => Tag;

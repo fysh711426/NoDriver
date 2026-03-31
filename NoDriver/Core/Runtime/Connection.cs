@@ -14,12 +14,12 @@ namespace NoDriver.Core.Runtime
     {
         private static readonly int _receiveBufferSize = 8192 * 4;
 
-        protected readonly ILogger? _logger;
-
         private int _messageIdCounter = 0;
         private CancellationTokenSource? _cts = null;
         private Task _listenerTask = Task.CompletedTask;
-        
+
+        protected readonly ILogger? _logger;
+
         public string WebSocketUrl { get; } = "";
         public Browser? Browser { get; set; } = null;
         public ClientWebSocket? WebSocket { get; private set; } = null;

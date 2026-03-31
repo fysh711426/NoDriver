@@ -12,7 +12,7 @@ namespace Example
             {
                 var logger = loggerFactory.CreateLogger<SomeImpression>();
 
-                var config = new Config { Logger = logger };
+                var config = new Config(logger);
                 await using (var browser = await Browser.CreateAsync(config))
                 {
                     var page = await browser.GetAsync("https://www.nowsecure.nl");
