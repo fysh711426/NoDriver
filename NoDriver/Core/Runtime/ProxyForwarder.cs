@@ -67,7 +67,7 @@ namespace NoDriver.Core.Runtime
             FwHost = uri.Host;
             FwScheme = Scheme;
 
-            var credentials = uri.UserInfo.Split(':', 2);
+            var credentials = uri.UserInfo.Split([':'], 2);
             Username = credentials.Length > 0 ? Uri.UnescapeDataString(credentials[0]) : "";
             Password = credentials.Length > 1 ? Uri.UnescapeDataString(credentials[1]) : "";
 

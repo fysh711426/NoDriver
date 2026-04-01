@@ -375,7 +375,7 @@ namespace NoDriver.Core.Runtime
                 DisposeOnDetach: disposeOnDetach,
                 ProxyServer: proxyServer,
                 ProxyBypassList: proxyBypassList?.Count > 0 ?
-                    string.Join(';', proxyBypassList) : null,
+                    string.Join(";", proxyBypassList) : null,
                 OriginsWithUniversalNetworkAccess: originsWithUniversalNetworkAccess
             ), token: token);
 
