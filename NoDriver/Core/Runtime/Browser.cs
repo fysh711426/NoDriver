@@ -644,6 +644,7 @@ namespace NoDriver.Core.Runtime
                     {
                         _process.Kill(true);
                         await _process.WaitForExitAsync();
+                        _process.WaitForExit();
                     }
                     _process.Dispose();
                     _logger?.LogInformation($"Killed browser with pid {_processPid} successfully.");
