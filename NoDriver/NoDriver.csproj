@@ -1,8 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net7.0;net6.0;net5.0</TargetFrameworks>
+    <TargetFrameworks>net8.0;net6.0;netstandard2.1;netstandard2.0</TargetFrameworks>
     <Nullable>enable</Nullable>
+    <IsPackable>true</IsPackable>
     <Authors>fysh711426</Authors>
     <PackageId>NoDriver</PackageId>
     <Description>This repo is a C# implementation of nodriver.
@@ -27,6 +28,14 @@ It is an async web scraping and browser automation library. This package is opti
     <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0' or '$(TargetFramework)' == 'netstandard2.1'">
+    <PackageReference Include="System.Text.Json" Version="10.0.5" />
+    <PackageReference Include="PolySharp" Version="1.15.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime;build;native;contentfiles;analyzers;buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
