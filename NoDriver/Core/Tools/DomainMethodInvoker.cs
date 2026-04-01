@@ -14,7 +14,7 @@ namespace NoDriver.Core.Tools
         {
             var key = $"{staticClass.FullName}.{methodName}";
 
-            var lazyInvoker = _invokerCache.GetOrAdd(key, (_) => new Lazy<Func<object>>(() =>
+            var lazyInvoker = _invokerCache.GetOrAdd(key, _ => new Lazy<Func<object>>(() =>
             {
                 var methodInfo = staticClass.GetMethod(methodName,
                     BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);

@@ -200,7 +200,8 @@ namespace NoDriver.Core.Runtime
                                         TargetHost = FwHost,
                                         EnabledSslProtocols =
                                             System.Security.Authentication.SslProtocols.Tls12 |
-                                            System.Security.Authentication.SslProtocols.Tls13,
+                                            //System.Security.Authentication.SslProtocols.Tls13,
+                                            (System.Security.Authentication.SslProtocols)12288,
                                         CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
                                         ClientCertificates = ClientCertificates,
                                         RemoteCertificateValidationCallback = RemoteCertificateValidationCallback
@@ -222,7 +223,7 @@ namespace NoDriver.Core.Runtime
                             }
 
                             var credentials = $"{Username}:{Password}";
-                            var authEncoded = Convert.ToBase64String(Encoding.Latin1.GetBytes(credentials));
+                            var authEncoded = Convert.ToBase64String(EncodingEx.Latin1.GetBytes(credentials));
 
                             var connectRequest =
                                 $"CONNECT {targetHostPort} HTTP/1.1\r\n" +
@@ -371,7 +372,8 @@ namespace NoDriver.Core.Runtime
                                         TargetHost = FwHost,
                                         EnabledSslProtocols =
                                             System.Security.Authentication.SslProtocols.Tls12 |
-                                            System.Security.Authentication.SslProtocols.Tls13,
+                                            //System.Security.Authentication.SslProtocols.Tls13,
+                                            (System.Security.Authentication.SslProtocols)12288,
                                         CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
                                         ClientCertificates = ClientCertificates,
                                         RemoteCertificateValidationCallback = RemoteCertificateValidationCallback
@@ -393,7 +395,7 @@ namespace NoDriver.Core.Runtime
                             }
 
                             var credentials = $"{Username}:{Password}";
-                            var authEncoded = Convert.ToBase64String(Encoding.Latin1.GetBytes(credentials));
+                            var authEncoded = Convert.ToBase64String(EncodingEx.Latin1.GetBytes(credentials));
 
                             if (isConnect)
                             {
@@ -554,7 +556,7 @@ namespace NoDriver.Core.Runtime
                     var lenByte = await ReadBytesAsync(clientStream, 1, token);
                     var domainLen = lenByte[0];
                     targetHostBytes = await ReadBytesAsync(clientStream, domainLen, token);
-                    targetHost = Encoding.Latin1.GetString(targetHostBytes);
+                    targetHost = EncodingEx.Latin1.GetString(targetHostBytes);
                 }
 
                 // 讀取目標埠號 (2 bytes, 大端序)
@@ -582,8 +584,8 @@ namespace NoDriver.Core.Runtime
                         // 若上游要求帳密驗證 (Method 0x02)
                         if (serverAuthMethod == 2)
                         {
-                            var uBytes = Encoding.Latin1.GetBytes(Username);
-                            var pBytes = Encoding.Latin1.GetBytes(Password);
+                            var uBytes = EncodingEx.Latin1.GetBytes(Username);
+                            var pBytes = EncodingEx.Latin1.GetBytes(Password);
 
                             using (var authTicket = new MemoryStream())
                             {
@@ -676,7 +678,7 @@ namespace NoDriver.Core.Runtime
 
                 if (count == limit)
                     throw new InvalidDataException("Header line exceeded maximum limit.");
-                return Encoding.Latin1.GetString(buffer, 0, count);
+                return EncodingEx.Latin1.GetString(buffer, 0, count);
             }
             finally
             {
@@ -686,7 +688,7 @@ namespace NoDriver.Core.Runtime
 
         private async Task WriteTextAsync(Stream stream, string text, CancellationToken token)
         {
-            var bytes = Encoding.Latin1.GetBytes(text);
+            var bytes = EncodingEx.Latin1.GetBytes(text);
             await stream.WriteAsync(bytes, 0, bytes.Length, token);
         }
 

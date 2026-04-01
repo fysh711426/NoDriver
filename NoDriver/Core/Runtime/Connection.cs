@@ -250,7 +250,8 @@ namespace NoDriver.Core.Runtime
 
                             var invoker = DomainMethodInvoker.GetInvoker(type, "Enable");
                             var command = invoker();
-                            await SendAsync((dynamic)command, true, token);
+                            //await SendAsync((dynamic)command, true, token);
+                            await CommandDispatcher.DispatchAsync(this, command, true, token);
                         }
                     }
                     catch (Exception ex)

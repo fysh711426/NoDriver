@@ -139,22 +139,19 @@ namespace NoDriver.Core.Runtime
             }
 
             var args = Config.GetArgs();
-            //var args = Config.GetArgs()
-            //    .Select(it => it.Trim())
-            //    .Aggregate("", (r, it) => r + " " +
-            //        (it.Contains(" ") ? $"\"{it}\"" : it));
 
             _logger?.LogInformation($"starting\n\texecutable: {exePath}\n\narguments: \n\t{string.Join("\n\t", args)}");
 
             if (!connectExisting)
             {
-                var info = new ProcessStartInfo(exePath, args)
+                var info = new ProcessStartInfo(exePath)
                 {
                     UseShellExecute = false,
                     RedirectStandardInput = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true
                 };
+                info.AddArguments(args);
                 _process = Process.Start(info);
                 if (_process == null)
                     throw new Exception("Failed to start process.");
