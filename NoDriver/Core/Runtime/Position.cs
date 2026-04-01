@@ -1,4 +1,6 @@
-﻿namespace NoDriver.Core.Runtime
+﻿using System.Collections.Generic;
+
+namespace NoDriver.Core.Runtime
 {
     public record Position : Cdp.DOM.Quad
     {

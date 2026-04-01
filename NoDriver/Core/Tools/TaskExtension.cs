@@ -1,4 +1,7 @@
-﻿namespace NoDriver.Core.Tools
+﻿using System.Threading;
+using System.Threading.Tasks;
+
+namespace NoDriver.Core.Tools
 {
     internal static class TaskExtension
     {

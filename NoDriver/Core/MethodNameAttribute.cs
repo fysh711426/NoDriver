@@ -1,4 +1,6 @@
-﻿namespace NoDriver.Core
+﻿using System;
+
+namespace NoDriver.Core
 {
     [AttributeUsage(AttributeTargets.Class, Inherited = false)]
     public class MethodNameAttribute : Attribute

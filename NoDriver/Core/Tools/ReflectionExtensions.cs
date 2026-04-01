@@ -1,4 +1,7 @@
-﻿namespace NoDriver.Core.Tools
+﻿using System;
+using System.Collections.Generic;
+
+namespace NoDriver.Core.Tools
 {
     internal static class ReflectionExtensions
     {

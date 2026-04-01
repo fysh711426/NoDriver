@@ -1,4 +1,6 @@
-﻿namespace NoDriver.Core.Messaging
+﻿using System;
+
+namespace NoDriver.Core.Messaging
 {
     public class ProtocolErrorException : Exception
     {

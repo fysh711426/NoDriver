@@ -1,4 +1,6 @@
-﻿namespace NoDriver.Core
+﻿using System.Collections.Generic;
+
+namespace NoDriver.Core
 {
     public interface IArrayType
     {
